@@ -3,8 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "build": "node ace build --production && cd build && npm ci --production",
-    "build:prod": "npm install && node ace build --production && cd build && npm ci --production",
+    "build": "npm install; node ace build --production; cd build; npm ci --production",
     "start": "node build/server.js",
     "dev": "node ace serve --watch"
   },
