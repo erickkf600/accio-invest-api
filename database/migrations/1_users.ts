@@ -12,7 +12,7 @@ export default class Users extends BaseSchema {
       table.string("password", 15).notNullable()
       table.timestamp('created_at', { useTz: true }).nullable().defaultTo(this.now())
       table.timestamp('updated_at', { useTz: true }).nullable()
-      table.collate('utf8_unicode_ci')
+      // table.collate('utf8_unicode_ci')
     })
   }
 

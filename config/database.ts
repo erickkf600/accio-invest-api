@@ -7,6 +7,7 @@
 
 import Env from '@ioc:Adonis/Core/Env'
 import { DatabaseConfig } from '@ioc:Adonis/Lucid/Database'
+import Application from '@ioc:Adonis/Core/Application'
 
 const databaseConfig: DatabaseConfig = {
   /*
@@ -22,6 +23,34 @@ const databaseConfig: DatabaseConfig = {
   connection: Env.get('DB_CONNECTION'),
 
   connections: {
+  /*
+    |--------------------------------------------------------------------------
+    | SQLite
+    |--------------------------------------------------------------------------
+    |
+    | Configuration for the SQLite database.  Make sure to install the driver
+    | from npm when using this connection
+    |
+    | npm i sqlite3
+    |
+    */
+    sqlite: {
+      client: 'sqlite',
+      connection: {
+        filename: Application.tmpPath(`${Env.get('DB_NAME')}.sqlite3`),
+      },
+      pool: {
+        afterCreate: (conn, cb) => {
+          conn.run('PRAGMA foreign_keys=true', cb)
+        },
+      },
+      migrations: {
+        naturalSort: true,
+      },
+      useNullAsDefault: true,
+      healthCheck: false,
+      debug: false,
+    },
     /*
     |--------------------------------------------------------------------------
     | MySQL config

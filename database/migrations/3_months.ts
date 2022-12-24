@@ -9,7 +9,7 @@ export default class Months extends BaseSchema {
       table.string("title", 3).notNullable()
       table.integer("num", 3).notNullable()
       table.string("full_name", 11).notNullable()
-      table.collate('utf8_unicode_ci')
+      // table.collate('utf8_unicode_ci')
     })
   }
 

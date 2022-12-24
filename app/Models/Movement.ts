@@ -41,12 +41,13 @@ export default class Movement extends BaseModel {
   @column()
   public year: number
 
-  @column.dateTime({
-    autoCreate: true,
-    serialize: (value: DateTime | null) => {
-      return value ? value.toFormat('yyyy') : value
-    },
-   })
+  // @column.dateTime({
+  //   autoCreate: true,
+  //   serialize: (value: DateTime | null) => {
+  //     return value ? value.toFormat('yyyy-M-d') : value
+  //   },
+  //  })
+  @column.dateTime({ autoCreate: true, autoUpdate: true })
   public 	created_at: DateTime
 
   @column.dateTime({ autoCreate: true, autoUpdate: true })

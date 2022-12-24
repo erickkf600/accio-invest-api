@@ -19,7 +19,7 @@ export default class Movements extends BaseSchema {
       table.decimal('total', 15, 2).nullable()
       table.timestamp('created_at', { useTz: true }).nullable().defaultTo(this.now())
       table.timestamp('updated_at', { useTz: true }).nullable()
-      table.collate('utf8_unicode_ci')
+      // table.collate('utf8_unicode_ci')
     })
   }
 

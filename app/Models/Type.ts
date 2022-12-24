@@ -9,4 +9,7 @@ export default class Type extends BaseModel {
 
   @column()
   public full_title: string
+
+  @column()
+  public hex: string
 }

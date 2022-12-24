@@ -10,7 +10,7 @@ export default class Operations extends BaseSchema {
       table.string("full_title", 50).notNullable()
       table.timestamp('created_at', { useTz: true }).nullable().defaultTo(this.now())
       table.timestamp('updated_at', { useTz: true }).nullable()
-      table.collate('utf8_unicode_ci')
+      // table.collate('utf8_unicode_ci')
     })
   }
 
