@@ -2,7 +2,7 @@ import BaseSeeder from '@ioc:Adonis/Lucid/Seeder'
 import Type from 'App/Models/Type'
 export default class TypeSeeder extends BaseSeeder {
   public async run () {
-    await Type.createMany([
+    await Type.updateOrCreateMany('title', [
       { title: 'FIIs', full_title: 'Fundos Imobiliarios', hex: '#00A7D7' },
       { title: 'Ações', full_title: 'Ações', hex: '#1BAA9C' },
       { title: 'RF', full_title: 'Renda Fixa', hex: '#3E1191' },

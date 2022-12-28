@@ -3,7 +3,7 @@ import Month from 'App/Models/Month'
 
 export default class MouthSeeder extends BaseSeeder {
   public async run () {
-    await Month.createMany([
+    await Month.updateOrCreateMany('num', [
       { title: 'Jan', num: 1, full_name: 'janeiro' },
       { title: 'Fev', num: 2, full_name: 'fevereiro' },
       { title: 'Mar', num: 3, full_name: 'março' },
