@@ -11,10 +11,7 @@ export default class HomeController {
       return b3.data?.Trad
     })
     .catch(() => {
-      throw {
-        code: 4,
-        message: "Ocorreu um erro ao buscar na api cotacao.b3.com.br",
-      };
+      return [];
     })
 
     return req
@@ -50,7 +47,7 @@ export default class HomeController {
     const total = await this.sumValues(array) + total_fees
     const groupArrays = await this.arrayGroup(array)
     const lastDividend = await this.sumValues(array, 3)
-    const lastAport = groupArrays.reduce((acc: any, {total}: any) => acc + total, 0)
+    const lastAport = groupArrays?.reduce((acc: any, {total}: any) => acc + total, 0)
 
     const patrimony = await this.getPatrimony(array)
 
