@@ -17,17 +17,14 @@ export default class EstimatesController {
   public async register(ctx: HttpContextContract) {
     const body: any = ctx.request.body()
 
-    console.log(body)
-    return true
-
-    // try {
-    //   await Estimates.createMany(body)
-    //   return true
-    //  } catch (error) {
-    //   throw {
-    //     code: 4,
-    //     message: "Ocorreu um erro ao cadastrar",
-    //   };
-    //  }
+    try {
+      await Estimates.createMany(body)
+      return true
+     } catch (error) {
+      throw {
+        code: 4,
+        message: "Ocorreu um erro ao cadastrar",
+      };
+     }
   }
 }
