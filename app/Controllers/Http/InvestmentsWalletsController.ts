@@ -92,10 +92,7 @@ export default class InvestmentsWalletsController {
       })
       return response
     }else{
-      throw {
-        code: 4,
-        message: "Não possui Ativos cadastrados",
-      };
+      return [];
     }
   }
 
@@ -207,6 +204,8 @@ export default class InvestmentsWalletsController {
       })
       return response
     }
+
+    return []
   }
 
   public async DividendsGraph(ctx: HttpContextContract) {

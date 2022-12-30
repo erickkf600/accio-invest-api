@@ -118,3 +118,10 @@ Route.delete("/moviments/:id", async (ctx) => {
 });
 
 
+
+Route.get("/estimate/list", async () => {
+  const { default: EstimatesController } = await import(
+    "App/Controllers/Http/EstimatesController"
+  );
+  return new EstimatesController().show();
+});

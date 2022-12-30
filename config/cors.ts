@@ -45,7 +45,7 @@ const corsConfig: CorsConfig = {
   |                     one of the above values.
   |
   */
-  origin: Env.get('ORIGIN'),
+  origin: ['https://accio-invest-api.onrender.com/', 'http://localhost:3000'],
 
   /*
   |--------------------------------------------------------------------------
