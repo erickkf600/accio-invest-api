@@ -6,7 +6,6 @@
  */
 
 import { CorsConfig } from "@ioc:Adonis/Core/Cors";
-
 const corsConfig: CorsConfig = {
   /*
   |--------------------------------------------------------------------------
@@ -44,7 +43,7 @@ const corsConfig: CorsConfig = {
   |                     one of the above values.
   |
   */
-  origin: ['https://accio-invest-api.onrender.com/', 'http://localhost:3000'],
+  origin: '*',
 
   /*
   |--------------------------------------------------------------------------
