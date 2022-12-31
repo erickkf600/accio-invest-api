@@ -25,10 +25,10 @@ export default class InvestmentsMovementsController {
         cod: el.cod,
         date_operation: el.date_operation,
         qtd: el.qtd,
-        unity_value: el.unity_value,
+        unity_value: +el.unity_value,
         obs: el.obs,
-        fee: el.fee,
-        total: el.total,
+        fee: +el.fee,
+        total: +el.total,
         type_operation: el.typeOperation,
         type: el.assetsType
       }
@@ -63,8 +63,8 @@ export default class InvestmentsMovementsController {
         qtd: el.qtd,
         unity_value: el.unity_value,
         obs: el.obs,
-        fee: el.fee,
-        total: el.total,
+        fee: +el.fee,
+        total: +el.total,
         type_operation: el.typeOperation,
         type: el.assetsType
       }
@@ -97,10 +97,10 @@ export default class InvestmentsMovementsController {
         cod: el.cod,
         date_operation: el.date_operation,
         qtd: el.qtd,
-        unity_value: el.unity_value,
+        unity_value: +el.unity_value,
         obs: el.obs,
-        fee: el.fee,
-        total: el.total,
+        fee: +el.fee,
+        total: +el.total,
         type_operation: el.typeOperation,
         type: el.assetsType
       }
@@ -178,10 +178,10 @@ export default class InvestmentsMovementsController {
         cod: el.cod,
         date_operation: el.date_operation,
         qtd: el.qtd,
-        unity_value: el.unity_value,
+        unity_value: +el.unity_value,
         obs: el.obs,
-        fee: el.fee,
-        total: el.total,
+        fee: +el.fee,
+        total: +el.total,
         type_operation: el.typeOperation,
         type: el.assetsType
       }
@@ -209,10 +209,10 @@ export default class InvestmentsMovementsController {
         cod: el.cod,
         date_operation: el.date_operation,
         qtd: el.qtd,
-        unity_value: el.unity_value,
+        unity_value: +el.unity_value,
         obs: el.obs,
-        fee: el.fee,
-        total: el.total,
+        fee: +el.fee,
+        total: +el.total,
         type_operation: el.typeOperation,
         type: el.assetsType
       }

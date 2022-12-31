@@ -26,17 +26,21 @@ export default class HomeController {
     })
     .preload('month')
 
+
     await movements.forEach((el: any) =>{
       el.date_operation = el.date_operation.slice(-7)
       el.type = el.assetsType.title
       el.hex = el.assetsType.hex
+      el.total = +el.total
+      el.fee = +el.fee
+      el.unity_value = +el.unity_value
     })
 
     const resume = await this.resume(movements)
+
     const alocations = await this.remoceDupliWithSum(movements, 1, 'type');
     const distribuition = await this.distribuition(movements)
     const aports = await this.AportsGraph()
-
 
     return {resume, alocations, distribuition, aports}
   }
@@ -48,6 +52,7 @@ export default class HomeController {
     const groupArrays = await this.arrayGroup(array)
     const lastDividend = await this.sumValues(array, 3)
     const lastAport = groupArrays?.reduce((acc: any, {total}: any) => acc + total, 0)
+
 
     const patrimony = await this.getPatrimony(array)
 
@@ -83,14 +88,17 @@ export default class HomeController {
     }, 0)
   }
   private arrayGroup(array: any, key: string = 'date_operation') {
-    const groups = array.reduce((acc: any, el: any) => {
+    const onlyPurnchage = array.filter((arr: any) => arr.type_operation === 1)
+    const groups = onlyPurnchage.reduce((acc: any, el: any) => {
       (acc[el[key]] = acc[el[key]] || []).push(el);
       return acc;
     }, {})
 
-    return Object.keys(groups).map((key: any) => {
-      return groups[key]
-    })?.[0]
+    const teste = Object.keys(groups).reduce((a, b) => {
+      return new Date(b) > new Date(a) ? b : a;
+    });
+
+    return groups[teste]
   }
 
   private remoceDupliWithSum(array, operation: number = 1, key: string = 'cod', key_sum: string = 'qtd'){
@@ -135,7 +143,7 @@ export default class HomeController {
   public async AportsGraph() {
     const year = new Date().getFullYear()
     const aportsCurrent: any = await Movement.query()
-    .groupBy('month_ref')
+    .groupBy('id', 'month_ref')
     .select('cod', 'date_operation', 'qtd', 'unity_value', 'type', 'year', 'month_ref')
     .select(Database.raw('round(sum(total), 2) as total'))
     .where('type_operation', 1)
@@ -144,7 +152,7 @@ export default class HomeController {
     .preload('month')
 
     const aportsPrevious: any = await Movement.query()
-    .groupBy('month_ref')
+    .groupBy('id', 'month_ref')
     .select('cod', 'date_operation', 'qtd', 'unity_value', 'total', 'type', 'year', 'month_ref')
     .select(Database.raw('round(sum(total), 2) as total'))
     .where('type_operation', 1)
@@ -152,20 +160,19 @@ export default class HomeController {
     .preload('assetsType')
     .preload('month')
 
-
     const lastYear = aportsPrevious.map((res: any) =>{
       return {
         data: res.date_operation,
         label: res.month.title,
-        valor: res.total,
-        ano: res.year
+        valor: +res.total,
+        ano: res.year,
       }
     })
     const currentYear = aportsCurrent.map((res: any) =>{
       return {
         data: res.date_operation,
         label: res.month.title,
-        valor: res.total,
+        valor: +res.total,
         ano: res.year
       }
     })

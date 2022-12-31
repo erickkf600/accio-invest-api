@@ -21,37 +21,35 @@ export default class InvestmentsWalletsController {
   public async aportsHistory() {
     const movements: any = await Movement.query()
     .select('month_ref', 'year')
-    .select(Database.raw('group_concat(cod, ",") as cod'))
-    .select(Database.raw('group_concat(total, ",") as unity_value'))
-    .select(Database.raw('group_concat(qtd, ",") as qtd'))
-    .select(Database.raw('group_concat(fee, ",") as fee'))
-    .select(Database.raw('round(sum(total), 2) as total'))
-    .where('type_operation', 1)
-    .groupBy('month_ref')
+    .select(Database.raw("array_agg(cod) as cod"))
+    .select(Database.raw("array_agg(total) as unity_value"))
+    .select(Database.raw("array_agg(qtd) as qtd"))
+    .select(Database.raw("array_agg(fee) as fee"))
+    .select(Database.raw("round(sum(total), 2) as total"))
+    .where( 'type_operation', 1)
+    .groupBy('year','month_ref')
     .preload('month')
+
+
 
     const chartMap = movements.map((el: any) =>{
       // const number = String(el.month_ref).padStart(2, '0');
-      const cods = el.cod.split(',')
-      const vals = el.unity_value.split(',')
-      const qtds = el.qtd.split(',')
-      const fees = el.fee.split(',')
       let sum = 0
-      const setItem = cods.map((cd: any, i: number) =>{
-        sum += +fees[i]
+      const setItem = el.cod.map((cd: any, i: number) =>{
+        sum += el.fee[i]
         return {
           asset: cd,
-          value:+vals[i] + +fees[i],
-          qtd: +qtds[i],
-          fee: +fees[i]
+          value:el.unity_value[i] + el.fee[i],
+          qtd: el.qtd[i],
+          fee: el.fee[i]
         }
       })
       return {
-        value: el.total,
+        value: +el.total,
         month: `${el.month.title}/${el.year}`,
         month_num: el.month.num,
         items: setItem,
-        total_fees: el.total + sum,
+        total_fees: +el.total + sum,
         fees: sum
       }
     })
@@ -60,14 +58,13 @@ export default class InvestmentsWalletsController {
 
   public async assetsList() {
     const movements: any = await Movement.query()
-    .groupBy('cod')
+    .groupBy('id', 'cod')
     .select('id', 'cod', 'type', 'qtd', 'total')
-    .select(Database.raw('sum(qtd) as qtd'))
     .where('type_operation', 1)
     .preload('assetsType')
 
     const dividends: any = await Movement.query()
-    .groupBy('cod')
+    .groupBy('id', 'cod')
     .select('total', 'cod', 'type_operation')
     .select(Database.raw('round(sum(total), 2) as total'))
     .where('type_operation', 3)
@@ -87,7 +84,7 @@ export default class InvestmentsWalletsController {
           type_id: res.assetsType.id,
           curr_price: b3?.scty?.SctyQtn.curPrc || '_._',
           payed_dividend: dividends.find((dvd: any) => dvd.cod === res.cod)?.total || 0.0,
-          total: this.convertThousand(res.total)
+          total: this.convertThousand(+res.total)
         }
       })
       return response
@@ -118,21 +115,23 @@ export default class InvestmentsWalletsController {
 
   public async patrimonyGainList() {
     const movements: any = await Movement.query()
-    .groupBy('month_ref')
+    .groupBy('id', 'month_ref')
     .select('total', 'month_ref')
     .select(Database.raw('round(sum(total), 2) as total'))
     .where('type_operation', 1)
 
+
     const dividends: any = await Movement.query()
-    .groupBy('month_ref')
+    .groupBy('id', 'month_ref')
     .select('total', 'month_ref', 'type_operation')
     .select(Database.raw('round(sum(total), 2) as total'))
     .where('type_operation', 3)
 
     let sum
-    const aportsIncremet = movements.map(({total}: any) => sum = (sum || 0) + total);
+    const aportsIncremet = movements.map(({total}: any) => sum = (sum || 0) + +total);
+
     const response = movements.map((el: any, i: number) =>{
-      const dividend = dividends[i]?.total || 0
+      const dividend = +dividends[i]?.total || 0
       const rentability = parseFloat(Math.abs(dividend / aportsIncremet[i] * 100).toString()).toFixed(2)
       return {
         month: el.month_ref,
@@ -211,7 +210,7 @@ export default class InvestmentsWalletsController {
   public async DividendsGraph(ctx: HttpContextContract) {
     const year: number = ctx.params.year;
     const dividendsCurrent: any = await Movement.query()
-    .groupBy('month_ref')
+    .groupBy('id', 'month_ref')
     .select('cod', 'date_operation', 'qtd', 'unity_value', 'type', 'year', 'month_ref')
     .select(Database.raw('round(sum(total), 2) as total'))
     .where('type_operation', 3)
@@ -220,7 +219,7 @@ export default class InvestmentsWalletsController {
     .preload('month')
 
     const dividendsPrevious: any = await Movement.query()
-    .groupBy('month_ref')
+    .groupBy('id', 'month_ref')
     .select('cod', 'date_operation', 'qtd', 'unity_value', 'total', 'type', 'year', 'month_ref')
     .select(Database.raw('round(sum(total), 2) as total'))
     .where('type_operation', 3)
@@ -233,7 +232,7 @@ export default class InvestmentsWalletsController {
       return {
         data: res.date_operation,
         label: res.month.title,
-        valor: res.total,
+        valor: +res.total,
         ano: res.year
       }
     })
@@ -241,7 +240,7 @@ export default class InvestmentsWalletsController {
       return {
         data: res.date_operation,
         label: res.month.title,
-        valor: res.total,
+        valor: +res.total,
         ano: res.year
       }
     })
