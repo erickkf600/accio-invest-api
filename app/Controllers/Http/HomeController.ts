@@ -51,8 +51,7 @@ export default class HomeController {
     const total = await this.sumValues(array) + total_fees
     const groupArrays = await this.arrayGroup(array)
     const lastDividend = await this.sumValues(array, 3)
-    const lastAport = groupArrays?.reduce((acc: any, {total}: any) => acc + total, 0)
-
+    const lastAport = groupArrays.reduce((acc: any, {total}: any) => acc + total, 0)
 
     const patrimony = await this.getPatrimony(array)
 
@@ -88,17 +87,21 @@ export default class HomeController {
     }, 0)
   }
   private arrayGroup(array: any, key: string = 'date_operation') {
-    const onlyPurnchage = array.filter((arr: any) => arr.type_operation === 1)
+    const onlyPurnchage = array.filter((arr: any) => arr.type_operation === 1) || []
     const groups = onlyPurnchage.reduce((acc: any, el: any) => {
       (acc[el[key]] = acc[el[key]] || []).push(el);
       return acc;
     }, {})
 
-    const teste = Object.keys(groups).reduce((a, b) => {
-      return new Date(b) > new Date(a) ? b : a;
-    });
+    if(Object.keys(groups).length){
+      const groupsOrder = Object.keys(groups).reduce((a, b) => {
+        return new Date(b) > new Date(a) ? b : a;
+      });
 
-    return groups[teste]
+      return groups[groupsOrder]
+    }
+
+  return {}
   }
 
   private remoceDupliWithSum(array, operation: number = 1, key: string = 'cod', key_sum: string = 'qtd'){
