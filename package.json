@@ -5,7 +5,7 @@
   "scripts": {
     "implement": "node ace migration:run --force && node ace db:seed",
     "build": "node ace build --production && cd build && npm ci --production",
-    "start": "cp .env build/.env && node ace serve",
+    "start": "cp .env build/.env && node build/server.js",
     "dev": "node ace serve --watch"
   },
   "devDependencies": {
