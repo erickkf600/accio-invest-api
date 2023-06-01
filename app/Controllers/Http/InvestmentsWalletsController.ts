@@ -118,24 +118,21 @@ export default class InvestmentsWalletsController {
 
 
   public async patrimonyGainList() {
+    // SELECT movements.month_ref, movements.year, round(sum(total), 2) as 'total' FROM movements WHERE type_operation = 1 GROUP BY movements.month_ref, movements.year
+
     const movements: any = await Movement.query()
-    .groupBy('month_ref', 'year')
-    .select('total', 'month_ref', 'year')
+    .select('month_ref', 'year', 'type_operation')
     .select(Database.raw('round(sum(total), 2) as total'))
+    .groupBy('month_ref', 'year', 'type_operation')
     .where('type_operation', 1)
-
-
-    const dividends: any = await Movement.query()
-    .groupBy('month_ref', 'year')
-    .select('total', 'month_ref', 'type_operation', 'year')
-    .select(Database.raw('round(sum(total), 2) as total'))
-    .where('type_operation', 3)
-
+    .orWhere('type_operation', 3)
+    const dividends = movements.filter((el: any) => el.type_operation === 3)
+    const mov = movements.filter((el: any) => el.type_operation === 1)
 
     let sum
     const aportsIncremet = movements.map(({total}: any) => sum = (sum || 0) + +total);
 
-    const response = movements.map((el: any, i: number) =>{
+    const response = mov.map((el: any, i: number) =>{
       const dividend = +dividends[i]?.total || 0
       const rentability = parseFloat(Math.abs(dividend / aportsIncremet[i] * 100).toString()).toFixed(2)
       return {
