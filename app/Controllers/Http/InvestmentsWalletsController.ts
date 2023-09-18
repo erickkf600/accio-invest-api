@@ -22,7 +22,7 @@ export default class InvestmentsWalletsController {
     const movements: any = await Movement.query()
     .select('month_ref', 'year')
     .select(Database.raw('group_concat(cod) as cod'))
-    .select(Database.raw('group_concat(total) as unity_value'))
+    .select(Database.raw('group_concat(unity_value) as unity_value'))
     .select(Database.raw('group_concat(qtd) as qtd'))
     .select(Database.raw('group_concat(fee) as fee'))
     .select(Database.raw('round(sum(total), 2) as total'))
@@ -40,19 +40,20 @@ export default class InvestmentsWalletsController {
       const fees = el.fee.split(',')
       const setItem = cods.map((cd: any, i: number) =>{
         sum += +fees[i]
+
         return {
           asset: cd,
-          value: +vals[i] + +fees[i],
+          value: +vals[i] * +qtds[i],
           qtd: +qtds[i],
           fee: +fees[i]
         }
       })
       return {
-        value: el.total,
+        value: setItem.reduce((acc, {value}) => acc+value ,0),
         month: `${el.month.title}/${el.year}`,
         month_num: el.month.num,
         items: setItem,
-        total_fees: el.total + sum,
+        total_fees: el.total,
         fees: sum
       }
     })
@@ -61,13 +62,14 @@ export default class InvestmentsWalletsController {
 
   public async assetsList() {
     const movements: any = await Movement.query()
-    .groupBy('id', 'cod')
+    .groupBy('cod')
     .select('id', 'cod', 'type', 'qtd', 'total')
     .where('type_operation', 1)
+    .select(Database.raw('round(sum(qtd), 2) as qtd'))
     .preload('assetsType')
 
     const dividends: any = await Movement.query()
-    .groupBy('id', 'cod')
+    .groupBy('cod')
     .select('total', 'cod', 'type_operation')
     .select(Database.raw('round(sum(total), 2) as total'))
     .where('type_operation', 3)

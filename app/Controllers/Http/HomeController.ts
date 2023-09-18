@@ -38,7 +38,7 @@ export default class HomeController {
 
     const resume = await this.resume(movements)
 
-    const alocations = await this.remoceDupliWithSum(movements, 1, 'type');
+    const alocations = await this.removeDupliWithSum(movements, 1, 'type');
     const distribuition = await this.distribuition(movements)
     const aports = await this.AportsGraph()
 
@@ -65,7 +65,7 @@ export default class HomeController {
 
   private async distribuition(array: any){
     let result: any = []
-    const res: any = await this.remoceDupliWithSum(array);
+    const res: any = await this.removeDupliWithSum(array);
     res.forEach((el: any) =>{
       if(el.type !== 'Renda Fixa'){
         result.push({
@@ -104,7 +104,7 @@ export default class HomeController {
   return {}
   }
 
-  private remoceDupliWithSum(array, operation: number = 1, key: string = 'cod', key_sum: string = 'qtd'){
+  private removeDupliWithSum(array, operation: number = 1, key: string = 'cod', key_sum: string = 'qtd'){
     let result: any = [];
     array.reduce(function(res: any, value: any) {
       if(value.type_operation === operation){
@@ -125,8 +125,9 @@ export default class HomeController {
 
 
   private async getPatrimony(array: any) {
+
     const realValue: number[] = []
-    const result: any = await this.remoceDupliWithSum(array);
+    const result: any = await this.removeDupliWithSum(array);
     // const totalOfAssets = await this.sumValues(array, 1, 'qtd')
     // const assets = array.map((el: any) => {if(el.type_operation == 1) return el.qtd})
     // const symbols = cods.reduce((acc: any, r: any) => {if(acc.indexOf(r)<0)acc.push(r);return acc;},[])
@@ -137,9 +138,11 @@ export default class HomeController {
 
     const pricing = valuesReq.map((req: any) => req.scty?.SctyQtn.curPrc)
 
+
     result.forEach((res: any, i: number) =>{
       realValue.push(Number(pricing[i] * res.qtd) || res.total)
     })
+
     return realValue.reduce((acc: number, val: number) => acc + val, 0)
   }
 
