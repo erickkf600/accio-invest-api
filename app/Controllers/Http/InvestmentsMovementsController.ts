@@ -118,7 +118,6 @@ export default class InvestmentsMovementsController {
 
   public async register(ctx: HttpContextContract) {
     const body: any = ctx.request.body()
-
     try {
       await Movement.createMany(body)
       return true
@@ -134,6 +133,8 @@ export default class InvestmentsMovementsController {
     const id: number = ctx.params.id;
     const body: any = ctx.request.body()
 
+    const [_, monthRef, year] = body.date_operation.split('/')
+
     const movement: any = await Movement.findOrFail(id)
 
     movement.cod = body.cod || movement.cod
@@ -145,6 +146,8 @@ export default class InvestmentsMovementsController {
     movement.obs = body.obs || movement.obs
     movement.fee = body.fee || movement.fee
     movement.total = body.total || movement.total
+    movement.month_ref = +monthRef || movement.month_ref
+    movement.year = +year || movement.year
     movement.updated_at = new Date().toISOString()
     await movement.save()
     return movement;

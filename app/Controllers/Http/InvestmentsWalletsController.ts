@@ -2,6 +2,7 @@ import Database from '@ioc:Adonis/Lucid/Database';
 import Movement from 'App/Models/Movement';
 import { HttpContextContract } from '@ioc:Adonis/Core/HttpContext'
 import axios from 'axios';
+
 export default class InvestmentsWalletsController {
 
   public async b3Rquest(symbols: any){
@@ -101,8 +102,10 @@ export default class InvestmentsWalletsController {
 
   public async dividendsList() {
     const dividends: any = await Movement.query()
-    .select('cod', 'date_operation', 'qtd', 'unity_value', 'total', 'type')
+    .select('cod', 'date_operation', 'qtd', 'unity_value', 'total', 'type', 'year', 'month_ref')
     .where('type_operation', 3)
+    .orderBy('year', 'desc')
+    .orderBy('month_ref', 'desc')
     .preload('assetsType')
 
     const response = dividends.map((res: any) =>{
@@ -112,7 +115,9 @@ export default class InvestmentsWalletsController {
         qtd: res.qtd,
         type: res.assetsType.title,
         unity_value: res.unity_value,
-        total: res.total
+        total: res.total,
+        month_ref: res.month_ref,
+        year: res.year,
       }
     })
     return response
@@ -123,30 +128,49 @@ export default class InvestmentsWalletsController {
     // SELECT movements.month_ref, movements.year, round(sum(total), 2) as 'total' FROM movements WHERE type_operation = 1 GROUP BY movements.month_ref, movements.year
 
     const movements: any = await Movement.query()
-    .select('month_ref', 'year', 'type_operation')
+    .select('month_ref', 'year', 'type_operation', 'total')
     .select(Database.raw('round(sum(total), 2) as total'))
     .groupBy('month_ref', 'year', 'type_operation')
-    .where('type_operation', 1)
-    .orWhere('type_operation', 3)
+    .orderBy('year', 'asc')
+    .orderBy('month_ref', 'asc')
+
     const dividends = movements.filter((el: any) => el.type_operation === 3)
     const mov = movements.filter((el: any) => el.type_operation === 1)
 
-    let sum
-    const aportsIncremet = movements.map(({total}: any) => sum = (sum || 0) + +total);
+    let sum = 0
+    const aportsIncremet = mov.map(({total, year, month_ref}: any) => {
+      sum = sum + total
+      return {
+        year,
+        month_ref,
+        total: sum
+      }
+    });
 
-    const response = mov.map((el: any, i: number) =>{
-      const dividend = +dividends[i]?.total || 0
-      const rentability = parseFloat(Math.abs(dividend / aportsIncremet[i] * 100).toString()).toFixed(2)
+   let lastValidValue = null;
+
+    const response = dividends.map((el: any) =>{
+      const valIndex = aportsIncremet.findIndex((val: any) => val.month_ref === el.month_ref && val.year === el.year)
+      let aport = aportsIncremet[valIndex]?.total || 0
+      const dividend = el.total || 0
+      if (aport) lastValidValue = aport;
+       else aport = lastValidValue;
+
+      const rentability = parseFloat(Math.abs(dividend / aport * 100).toString()).toFixed(2)
       return {
         month: `${el.month_ref}/${el.year.toString().substr(-2)}`,
-        value: aportsIncremet[i],
-        dividend: dividend,
+        value: aport,
+        dividend: el.total,
         rent: rentability+'%',
       }
     })
+    response.sort((a, b) => {
+      const [monthA, yearA] = a.month.split('/');
+      const [monthB, yearB] = b.month.split('/');
+      return yearB - yearA || monthB - monthA;
+  });
 
-
-    return response.sort();
+    return response
   }
 
   public async VariationsList() {
@@ -214,42 +238,33 @@ export default class InvestmentsWalletsController {
   public async DividendsGraph(ctx: HttpContextContract) {
     const year: number = ctx.params.year;
     const dividendsCurrent: any = await Movement.query()
-    .groupBy('id', 'month_ref')
-    .select('cod', 'date_operation', 'qtd', 'unity_value', 'type', 'year', 'month_ref')
+    .select('cod', 'date_operation', 'qtd', 'unity_value', 'type', 'year', 'month_ref', 'type_operation')
     .select(Database.raw('round(sum(total), 2) as total'))
     .where('type_operation', 3)
-    .andWhere('year', year)
+    .groupBy('year', 'month_ref')
     .preload('assetsType')
     .preload('month')
 
-    const dividendsPrevious: any = await Movement.query()
-    .groupBy('id', 'month_ref')
-    .select('cod', 'date_operation', 'qtd', 'unity_value', 'total', 'type', 'year', 'month_ref')
-    .select(Database.raw('round(sum(total), 2) as total'))
-    .where('type_operation', 3)
-    .andWhere('year', (+year-1))
-    .preload('assetsType')
-    .preload('month')
+    const lastYear = dividendsCurrent.filter((el) => el.year == +year-1)
+    const currentYear = dividendsCurrent.filter((el) => el.year == year)
 
-
-    const lastYear = dividendsPrevious.map((res: any) =>{
+    const responseLastYear = lastYear.map((res: any) =>{
       return {
-        data: res.date_operation,
+        data: res.date_operation.slice(3),
         label: res.month.title,
         valor: +res.total,
         ano: res.year
       }
     })
-    const currentYear = dividendsCurrent.map((res: any) =>{
+    const responseCurrentYear = currentYear.map((res: any) =>{
       return {
-        data: res.date_operation,
+        data: res.date_operation.slice(3),
         label: res.month.title,
         valor: +res.total,
         ano: res.year
       }
     })
-
-    return [lastYear, currentYear]
+    return [responseLastYear, responseCurrentYear]
   }
 
   public convertThousand(num: any){

@@ -3,6 +3,7 @@ import Movement from 'App/Models/Movement'
 import Database from '@ioc:Adonis/Lucid/Database'
 import axios from 'axios'
 
+
 export default class HomeController {
 
   public async b3Rquest(symbols: any){
@@ -27,7 +28,7 @@ export default class HomeController {
     .preload('month')
 
 
-    await movements.forEach((el: any) =>{
+    await movements.forEach((el: any) => {
       el.date_operation = el.date_operation.slice(-7)
       el.type = el.assetsType.title
       el.hex = el.assetsType.hex
@@ -41,24 +42,25 @@ export default class HomeController {
     const alocations = await this.removeDupliWithSum(movements, 1, 'type');
     const distribuition = await this.distribuition(movements)
     const aports = await this.AportsGraph()
-
     return {resume, alocations, distribuition, aports}
   }
 
 
   private async resume(array: any){
-    const total_fees = await this.sumValues(array, 1, 'fee')
-    const total = await this.sumValues(array) + total_fees
+
+    const total = await this.sumValues(array)
+
     const groupArrays = await this.arrayGroup(array)
-    const lastDividend = await this.sumValues(array, 3)
+    const groupArraysDividends = this.arrayGroup(array, 3)
     const lastAport = groupArrays.reduce((acc: any, {total}: any) => acc + total, 0)
+    const lastDividends = groupArraysDividends.reduce((acc: any, {total}: any) => acc + total, 0)
 
     const patrimony = await this.getPatrimony(array)
 
     return {
       total: total,
       last: lastAport,
-      last_dividend: lastDividend,
+      last_dividend: lastDividends,
       patrimony
     }
   }
@@ -78,7 +80,7 @@ export default class HomeController {
     return result;
   }
 
-  private sumValues(array: any, type: number = 1, key: string = 'total'){
+  private sumValues(array: any, type: number = 1, key: string = 'total') {
     return array.reduce((acc: any, el: any) => {
       if(el.type_operation == type){
         return acc + el[key]
@@ -86,9 +88,9 @@ export default class HomeController {
       return acc
     }, 0)
   }
-  private arrayGroup(array: any, key: string = 'date_operation') {
-    const onlyPurnchage = array.filter((arr: any) => arr.type_operation === 1) || []
-    const groups = onlyPurnchage.reduce((acc: any, el: any) => {
+  private arrayGroup(array: any, type: number = 1, key: string = 'date_operation') {
+    const onlyPurchase = array.filter((arr: any) => arr.type_operation === type) || []
+    const groups = onlyPurchase.reduce((acc: any, el: any) => {
       (acc[el[key]] = acc[el[key]] || []).push(el);
       return acc;
     }, {})
@@ -137,7 +139,12 @@ export default class HomeController {
 
 
     const pricing = valuesReq.map((req: any) => req.scty?.SctyQtn.curPrc)
-
+    // return valuesReq.map((req: any) => {
+    //   return {
+    //     value: req.scty?.SctyQtn.curPrc,
+    //     simbol: req.scty?.symb
+    //   }
+    // })
 
     result.forEach((res: any, i: number) =>{
       realValue.push(Number(pricing[i] * res.qtd) || res.total)
@@ -148,42 +155,34 @@ export default class HomeController {
 
   public async AportsGraph() {
     const year = new Date().getFullYear()
-    const aportsCurrent: any = await Movement.query()
-    .groupBy('id', 'month_ref')
-    .select('cod', 'date_operation', 'qtd', 'unity_value', 'type', 'year', 'month_ref')
+    const dividendsCurrent: any = await Movement.query()
+    .select('cod', 'date_operation', 'qtd', 'unity_value', 'type', 'year', 'month_ref', 'type_operation')
     .select(Database.raw('round(sum(total), 2) as total'))
     .where('type_operation', 1)
-    .andWhere('year', year)
+    .groupBy('year', 'month_ref')
     .preload('assetsType')
     .preload('month')
 
-    const aportsPrevious: any = await Movement.query()
-    .groupBy('id', 'month_ref')
-    .select('cod', 'date_operation', 'qtd', 'unity_value', 'total', 'type', 'year', 'month_ref')
-    .select(Database.raw('round(sum(total), 2) as total'))
-    .where('type_operation', 1)
-    .andWhere('year', (year-1))
-    .preload('assetsType')
-    .preload('month')
+    const lastYear = dividendsCurrent.filter((el) => el.year == year-1)
+    const currentYear = dividendsCurrent.filter((el) => el.year == year)
 
-    const lastYear = aportsPrevious.map((res: any) =>{
+    const responseLastYear = lastYear.map((res: any) =>{
       return {
-        data: res.date_operation,
-        label: res.month.title,
-        valor: +res.total,
-        ano: res.year,
-      }
-    })
-    const currentYear = aportsCurrent.map((res: any) =>{
-      return {
-        data: res.date_operation,
+        data: res.date_operation.slice(3),
         label: res.month.title,
         valor: +res.total,
         ano: res.year
       }
     })
-
-    return [lastYear, currentYear]
+    const responseCurrentYear = currentYear.map((res: any) =>{
+      return {
+        data: res.date_operation.slice(3),
+        label: res.month.title,
+        valor: +res.total,
+        ano: res.year
+      }
+    })
+    return [responseLastYear, responseCurrentYear]
   }
 
 
