@@ -22,6 +22,7 @@ export default class HomeController {
     .select('id', 'total', 'fee', 'month_ref', 'unity_value', 'cod', 'date_operation', 'qtd', 'type_operation', 'type')
     .orderBy('year', 'desc')
     .orderBy('month_ref', 'desc')
+    .whereNot('type_operation', 2)
     .preload('assetsType', (query) =>{
       query.select('title', 'full_title', 'hex')
     })

@@ -10,6 +10,7 @@ export default class EstimatesController {
     .select('id', 'cod', 'type', 'qtd')
     .select(Database.raw('sum(qtd) as qtd'))
     .where('type', 1)
+    .andWhereNot('type_operation', 2)
 
     return movements
   }

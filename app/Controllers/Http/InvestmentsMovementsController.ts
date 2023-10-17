@@ -1,5 +1,6 @@
 import Movement from 'App/Models/Movement'
 import { HttpContextContract } from '@ioc:Adonis/Core/HttpContext'
+import Database from '@ioc:Adonis/Lucid/Database';
 
 export default class InvestmentsMovementsController {
   public async show(ctx: HttpContextContract) {
@@ -118,8 +119,100 @@ export default class InvestmentsMovementsController {
 
   public async register(ctx: HttpContextContract) {
     const body: any = ctx.request.body()
+
+    for await (const iterator of body) {
+      if(iterator.type_operation !== 2) {
+        try {
+          await Movement.createMany(body)
+          return true
+         } catch (error) {
+          throw {
+            code: 4,
+            message: "Ocorreu um erro ao cadastrar",
+          };
+         }
+      }else {
+       return await this.sellItem(iterator)
+      }
+    }
+    return true
+  }
+
+
+  private async sellItem(item: any) {
+    const moviment = Movement
+    .query()
+    .where('cod', item.cod)
+    .andWhereNot('type_operation', 2)
+
+    const foundedItem = await moviment
+    foundedItem.sort((a, b) => (b.qtd > a.qtd ? -1 : 1))
+    if(foundedItem.length){
+      const qtd = foundedItem.reduce((acc, {qtd}) => acc + qtd, 0)
+      await this.registerSell(item)
+      if(item.qtd >= qtd) {
+        await  moviment.delete()
+      }else{
+        foundedItem.map((asset: any) =>{
+          if (item.qtd > 0) {
+            const quantityToUpdate = Math.min(item.qtd, asset.qtd);
+            item.qtd -= quantityToUpdate;
+            asset.qtd -= quantityToUpdate;
+            asset.total = asset.unity_value * asset.qtd;
+            return asset
+          }
+        })
+        try {
+          await this.deleteZero(foundedItem.filter(del => !del.qtd))
+          await this.updateWithNewValue(foundedItem.filter(el => !!el.qtd))
+
+          return true
+        } catch (error) {
+          throw {
+            code: 4,
+            message: "Falha na execução de updade ou delete",
+          };
+        }
+      }
+    }else {
+      throw {
+        code: 4,
+        message: `${item.cod} não encontrado na base`,
+      };
+    }
+  }
+
+  private async deleteZero(array: any[]){
+    if(array.length) {
+      const ids = array.map((item) => item.id)
+      await Movement
+          .query()
+          .whereIn('id', ids)
+          .andWhere('type_operation', 1)
+          .delete()
+    }
+    return array
+  }
+
+  private async updateWithNewValue(array: any[]) {
+    if(array.length) {
+      const ids = array.map((item) => item.id)
+      const movementsToUpdate = await Movement
+      .query()
+      .whereIn('id', ids)
+      array.forEach((el, i) => {
+        movementsToUpdate[i].qtd = el.qtd;
+        movementsToUpdate[i].total = el.total;
+      });
+      const savePromises = movementsToUpdate.map((movement) => movement.save());
+      await Promise.all(savePromises);
+      return movementsToUpdate
+    }
+  }
+
+  private async registerSell(data: any) {
     try {
-      await Movement.createMany(body)
+      await Movement.create(data)
       return true
      } catch (error) {
       throw {

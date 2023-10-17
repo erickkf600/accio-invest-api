@@ -133,6 +133,7 @@ export default class InvestmentsWalletsController {
     .groupBy('month_ref', 'year', 'type_operation')
     .orderBy('year', 'asc')
     .orderBy('month_ref', 'asc')
+    .whereIn('type_operation', [1,3])
 
     const dividends = movements.filter((el: any) => el.type_operation === 3)
     const mov = movements.filter((el: any) => el.type_operation === 1)
