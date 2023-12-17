@@ -133,8 +133,6 @@ export default class InvestmentsWalletsController {
 
   public async patrimonyGainList() {
     // SELECT movements.month_ref, movements.year, round(sum(total), 2) as 'total' FROM movements WHERE type_operation = 1 GROUP BY movements.month_ref, movements.year
-
-    const aports = this.aportsHistory()
     const movements: any = await Movement.query()
     .select('month_ref', 'year', 'type_operation', 'total')
     .select(Database.raw('round(sum(total), 2) as total'))
