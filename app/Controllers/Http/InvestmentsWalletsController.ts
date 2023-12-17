@@ -29,6 +29,8 @@ export default class InvestmentsWalletsController {
     .select(Database.raw('round(sum(total), 2) as total'))
     .where( 'type_operation', 1)
     .groupBy('year','month_ref')
+    .orderBy('year', 'asc')
+    .orderBy('month_ref', 'asc')
     .preload('month')
 
 
@@ -58,6 +60,11 @@ export default class InvestmentsWalletsController {
         fees: sum
       }
     })
+    chartMap.sort((a, b) => {
+      const yearA = a.month.split('/').pop();
+      const yearB = b.month.split('/').pop();
+      return yearB - yearA || b.month_num - a.month_num;
+  });
     return chartMap
   }
 
@@ -127,6 +134,7 @@ export default class InvestmentsWalletsController {
   public async patrimonyGainList() {
     // SELECT movements.month_ref, movements.year, round(sum(total), 2) as 'total' FROM movements WHERE type_operation = 1 GROUP BY movements.month_ref, movements.year
 
+    const aports = this.aportsHistory()
     const movements: any = await Movement.query()
     .select('month_ref', 'year', 'type_operation', 'total')
     .select(Database.raw('round(sum(total), 2) as total'))
@@ -148,20 +156,23 @@ export default class InvestmentsWalletsController {
       }
     });
 
-   let lastValidValue = null;
+   let lastValidValue: any = null;
 
     const response = dividends.map((el: any) =>{
       const valIndex = aportsIncremet.findIndex((val: any) => val.month_ref === el.month_ref && val.year === el.year)
       let aport = aportsIncremet[valIndex]?.total || 0
       const dividend = el.total || 0
-      if (aport) lastValidValue = aport;
-       else aport = lastValidValue;
+      const lastAport = mov.find(v => v.month_ref === el.month_ref && v.year === el.year)?.total || 0
+      if (aport) {
+        lastValidValue = aport
+      } else aport = lastValidValue;
+      const finalValue = aport-lastAport
+      const rentability = parseFloat(Math.abs(dividend / finalValue * 100).toString()).toFixed(2)
 
-      const rentability = parseFloat(Math.abs(dividend / aport * 100).toString()).toFixed(2)
       return {
         month: `${el.month_ref}/${el.year.toString().substr(-2)}`,
-        value: aport,
-        dividend: el.total,
+        value: finalValue,
+        dividend: dividend,
         rent: rentability+'%',
       }
     })
@@ -169,7 +180,7 @@ export default class InvestmentsWalletsController {
       const [monthA, yearA] = a.month.split('/');
       const [monthB, yearB] = b.month.split('/');
       return yearB - yearA || monthB - monthA;
-  });
+    });
 
     return response
   }
