@@ -2,6 +2,7 @@ import { HttpContextContract } from '@ioc:Adonis/Core/HttpContext'
 import Movement from 'App/Models/Movement'
 import Database from '@ioc:Adonis/Lucid/Database'
 import axios from 'axios'
+import InvestmentsWalletsController from './InvestmentsWalletsController'
 
 
 export default class HomeController {
@@ -17,6 +18,18 @@ export default class HomeController {
 
     return req
 }
+public async cdiRequest(year: any){
+  const req = await axios.get(`https://api.bcb.gov.br/dados/serie/bcdata.sgs.4391/dados?formato=json&dataInicial=01/01/${year}&dataFinal=31/12/${year}`)
+  .then((cdi) => {
+    return cdi.data
+  })
+  .catch(() => {
+    return [];
+  })
+
+  return req
+}
+
   public async showHome(_ctx: HttpContextContract) {
     const movements: any = await Movement.query()
     .select('id', 'total', 'fee', 'month_ref', 'unity_value', 'cod', 'date_operation', 'qtd', 'type_operation', 'type')
@@ -37,6 +50,7 @@ export default class HomeController {
       el.fee = +el.fee
       el.unity_value = +el.unity_value
     })
+    if(!movements.length) return {resume: [], alocations: [], distribuition: [], aports: []}
 
     const resume = await this.resume(movements)
 
@@ -46,7 +60,7 @@ export default class HomeController {
     return {resume, alocations, distribuition, aports}
   }
 
-
+//TODO REVER COMO SE CALCULA O RENDIMENTO
   private async resume(array: any){
 
     const total = await this.sumValues(array)
@@ -194,4 +208,133 @@ export default class HomeController {
     }
     return str
 }
+
+public async getCDIComparation(ctx: HttpContextContract) {
+
+  const year: number = ctx.params.year;
+  const cdi = await this.cdiData(year)
+  const myValue = await this.myResturnAsset(year)
+  return [cdi, myValue]
+}
+
+private async myResturnAsset(year: any) {
+  const investmetControl = new InvestmentsWalletsController()
+  const myReturns: any = await investmetControl.patrimonyGainList('desc')
+  const returnByYear = myReturns.filter((item) => Number(`20${item.month.split('/')[1]}`) == year)
+  const newValue = [...Array(12)].map((_, i: number) =>{
+    const val = {
+      data: `${i + 1}/${year.slice(2)}`,
+      valor: null,
+    }
+    const founded = returnByYear.find(e =>  e.month == val.data)
+    if(founded) {
+      val.valor = +founded?.rent.replace('%', '') as any
+    }
+    return val
+  })
+
+
+  return newValue
+}
+
+  private async cdiData(year: number) {
+    const cdiPercent = await this.cdiRequest(year)
+
+  return cdiPercent.map((el) =>{
+    return {
+      data: `${el.data.split('/')[1]}/${el.data.split('/')[2]}`,
+      valor: +el.valor
+    }
+  })
+  }
+
+  public async getPatrimonyEvolution(ctx: HttpContextContract) {
+
+    const type: 'month' | 'year' = ctx.params.type;
+
+    if(type === 'month') {
+      const movements: any = await Movement.query()
+    .select('month_ref', 'year', 'type_operation')
+    .select(Database.raw('round(sum(total), 2) as total'))
+    .whereIn('type_operation', [1,3])
+    .groupBy('type_operation','month_ref', 'year')
+    .preload('month')
+
+     const mov = movements.filter((el: any) => el.type_operation === 1)
+      return mov
+    let sum = 0
+    const chartMap = mov.map((el: any) =>{
+      // const number = String(el.month_ref).padStart(2, '0');
+
+      if(el.type_operation === 1)
+        sum = sum + el.total
+      // else if(el.type_operation === 3) {
+      //   sum = el.total
+      // }
+      return {
+        month_num: `${el.month.num}/${el.year}`,
+        total_fees: sum,
+        total: el.total,
+        type: el.type_operation
+      }
+    })
+    chartMap.sort((a, b) => {
+      const [monthA, yearA] = a.month_num.split('/');
+      const [monthB, yearB] = b.month_num.split('/');
+      return yearB - yearA || monthB - monthA
+    });
+
+    // let result: any = []
+
+    // chartMap.reduce((res, value) => {
+    //   if (!res[value.month_num]) {
+    //     res[value.month_num] = { month_num: value.month_num, total: 0 };
+    //     result.push(res[value.month_num])
+    //   }
+    //   res[value.month_num].total += value.total;
+    //   return res;
+    // }, {});
+      //   const summedData = chartMap.reduce((acc, item) => {
+      //     const existingItem = acc.find((x) => x.month_num === item.month_num);
+
+      //     if (existingItem) {
+      //         existingItem.total += item.total;
+      //         existingItem.total_fees += item.total_fees;
+      //     } else {
+      //         acc.push({ ...item });
+      //     }
+
+      //     return acc;
+      // }, []);
+
+    return chartMap
+      // const investmetControl = new InvestmentsWalletsController()
+      // const myApports: any = await investmetControl.aportsHistory('desc')
+      // const myApports: any = await investmetControl.patrimonyGainList('desc')
+      // let sum = 0
+      // const aportsIncremet = myApports.map(({total_fees, month}: any) => {
+      //   sum = sum + total_fees
+      //   return {
+      //     month,
+      //     total: +sum.toFixed(2)
+      //   }
+      // });
+    //   const valoresTrimestrais = dados.reduce((acc, dado) => {
+    //     const [mes, ano] = dado.month.split('/');
+    //     const trimestre = Math.ceil(parseInt(mes) / 3); // Calcula o trimestre
+    //     const chave = `Q${trimestre}/${ano}`; // Cria uma chave trimestral
+
+    //     if (!acc[chave]) {
+    //         acc[chave] = 0;
+    //     }
+
+    //     acc[chave] += dado.total;
+
+    //     return acc;
+    // }, {});
+
+    // return aportsIncremet
+    }
+
+  }
 }

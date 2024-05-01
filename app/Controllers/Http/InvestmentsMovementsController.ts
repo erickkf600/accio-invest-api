@@ -42,7 +42,8 @@ export default class InvestmentsMovementsController {
 
     return response
   }
-
+//TODO API CDI https://api.bcb.gov.br/dados/serie/bcdata.sgs.4391/dados?formato=json
+//DIARIO https://api.bcb.gov.br/dados/serie/bcdata.sgs.12/dados?formato=json&dataInicial=01/01/2023&dataFinal=31/12/2023
   public async showByYear(ctx: HttpContextContract) {
     const year: number = ctx.params.year;
     const movements: any = await Movement.query()

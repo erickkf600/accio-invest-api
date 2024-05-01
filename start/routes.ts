@@ -34,6 +34,18 @@ Route.get("/home/resume", async (ctx) => {
   );
   return new HomeController().showHome(ctx);
 });
+Route.get("/home/cdi/:year", async (ctx) => {
+  const { default: HomeController } = await import(
+    "App/Controllers/Http/HomeController"
+  );
+  return new HomeController().getCDIComparation(ctx);
+});
+Route.get("/home/evolution/:type", async (ctx) => {
+  const { default: HomeController } = await import(
+    "App/Controllers/Http/HomeController"
+  );
+  return new HomeController().getPatrimonyEvolution(ctx);
+});
 
 
 
@@ -125,3 +137,4 @@ Route.get("/estimate/list", async () => {
   );
   return new EstimatesController().show();
 });
+
