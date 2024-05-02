@@ -6,7 +6,9 @@
     "implement": "node ace migration:run --force && node ace db:seed",
     "build": "node ace build --production && cd build && npm ci --production",
     "start": "cp .env build/.env && node build/server.js",
-    "dev": "node ace serve --watch"
+    "dev": "node ace serve --watch",
+    "docker:dev": "docker-compose up",
+    "docker:build": "docker-compose up --build"
   },
   "devDependencies": {
     "@adonisjs/assembler": "^5.3.5",
