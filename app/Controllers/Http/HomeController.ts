@@ -41,7 +41,6 @@ public async cdiRequest(year: any){
     })
     .preload('month')
 
-
     await movements.forEach((el: any) => {
       el.date_operation = el.date_operation.slice(-7)
       el.type = el.assetsType.title
@@ -51,9 +50,7 @@ public async cdiRequest(year: any){
       el.unity_value = +el.unity_value
     })
     if(!movements.length) return {resume: [], alocations: [], distribuition: [], aports: []}
-
     const resume = await this.resume(movements)
-
     const alocations = await this.removeDupliWithSum(movements, 1, 'type');
     const distribuition = await this.distribuition(movements)
     const aports = await this.AportsGraph()
@@ -68,7 +65,7 @@ public async cdiRequest(year: any){
     const groupArrays = await this.arrayGroup(array)
     const groupArraysDividends = this.arrayGroup(array, 3)
     const lastAport = groupArrays.reduce((acc: any, {total}: any) => acc + total, 0)
-    const lastDividends = groupArraysDividends.reduce((acc: any, {total}: any) => acc + total, 0)
+    const lastDividends = (groupArraysDividends.length ? groupArraysDividends : []).reduce((acc: any, {total}: any) => acc + total, 0) || 0
 
     const patrimony = await this.getPatrimony(array)
 
