@@ -1,4 +1,5 @@
 import Movement from 'App/Models/Movement'
+import Change from 'App/Models/Change'
 import { HttpContextContract } from '@ioc:Adonis/Core/HttpContext'
 
 export default class InvestmentsMovementsController {
@@ -138,6 +139,30 @@ export default class InvestmentsMovementsController {
     return true
   }
 
+  public async registerSplit(ctx: HttpContextContract) {
+    const body: any = ctx.request.body()
+    const movement = await Movement
+          .query()
+          .where('cod', body.cod)
+          .andWhere('type_operation', 1)
+
+      // const changeType = await Change.find(body.factor)
+      // const foundedItem = await movement
+
+      movement.forEach(el =>{
+        if(body.factor === 1) {
+          el.unity_value = +el.unity_value / body.to
+          el.qtd = +el.qtd * body.to
+        }else{
+          console.log(+el.unity_value / body.to)
+        }
+      })
+
+      // await movement.save()
+
+    return movement
+  }
+
 
   private async sellItem(item: any) {
     const moviment = Movement
@@ -146,6 +171,7 @@ export default class InvestmentsMovementsController {
     .andWhereNot('type_operation', 2)
 
     const foundedItem = await moviment
+
     foundedItem.sort((a, b) => (b.qtd > a.qtd ? -1 : 1))
     if(foundedItem.length){
       const qtd = foundedItem.reduce((acc, {qtd}) => acc + qtd, 0)

@@ -75,6 +75,7 @@ export default class InvestmentsWalletsController {
     const movements: any = await Movement.query()
     .groupBy('cod')
     .select('id', 'cod', 'type', 'qtd', 'total')
+    .select(Database.raw('round(sum(total), 2) as total'))
     .where('type_operation', 1)
     .select(Database.raw('round(sum(qtd), 2) as qtd'))
     .preload('assetsType')
@@ -144,13 +145,11 @@ export default class InvestmentsWalletsController {
     .orderBy('month_ref', 'asc')
     .whereIn('type_operation', [1,3])
 
-
     const dividends = movements.filter((el: any) => el.type_operation === 3)
     const mov = movements.filter((el: any) => el.type_operation === 1)
-
     let sum = 0
     const aportsIncremet = mov.map(({total, year, month_ref}: any) => {
-      sum = sum + total
+      sum = sum + Number(total)
       return {
         year,
         month_ref,
@@ -163,11 +162,13 @@ export default class InvestmentsWalletsController {
     const response = dividends.map((el: any) =>{
       const valIndex = aportsIncremet.findIndex((val: any) => val.month_ref === el.month_ref && val.year === el.year)
       let aport = aportsIncremet[valIndex]?.total || 0
+
       const dividend = el.total || 0
       const lastAport = mov.find(v => v.month_ref === el.month_ref && v.year === el.year)?.total || 0
       if (aport) {
         lastValidValue = aport
       } else aport = lastValidValue;
+
       const finalValue = aport-lastAport
       const rentability = parseFloat(Math.abs(dividend / finalValue * 100).toString()).toFixed(2)
 

@@ -1,6 +1,29 @@
 version: "3.8"
 
+networks: # Specify the network for bridging
+  app-network:
+    driver: bridge
+
 services:
+  adonis-mysql:
+    image: mysql
+    container_name: adonis-mysql
+    restart: always
+    ports:
+      - 3306:3306
+    expose:
+      - "3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: admin
+      MYSQL_USER: deverick
+      MYSQL_PASSWORD: 8294
+      MYSQL_DATABASE: accio
+    networks:
+      - app-network
+  # phpmyadmin:
+  #   image: phpmyadmin/phpmyadmin
+  #   ports:
+  #     - "7300:80"
   accio_invest:
     container_name: accio_invest
     restart: always
@@ -19,20 +42,5 @@ services:
     command: dumb-init node ace serve --watch --node-args="--inspect=0.0.0.0"
     depends_on:
       - adonis-mysql
-  adonis-mysql:
-    image: mysql
-    container_name: adonis-mysql
-    restart: always
-    ports:
-      - 3306:3306
-    expose:
-      - "3306"
-    environment:
-      MYSQL_ROOT_PASSWORD: admin
-      MYSQL_USER: deverick
-      MYSQL_PASSWORD: 8294
-      MYSQL_DATABASE: accio
-  # phpmyadmin:
-  #   image: phpmyadmin/phpmyadmin
-  #   ports:
-  #     - "7300:80"
+    networks:
+      - app-network

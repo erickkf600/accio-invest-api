@@ -1,4 +1,5 @@
 import Route from '@ioc:Adonis/Core/Route'
+import Change from 'App/Models/Change'
 import Month from 'App/Models/Month'
 import Operation from 'App/Models/Operation'
 import Type from 'App/Models/Type'
@@ -10,6 +11,7 @@ Route.get("/months", async () => await Month.query().orderBy('num'));
 Route.get("/users", async () => await User.query().select('id', 'name', 'user', 'email'));
 Route.get("/assets", async () => await Type.query().select('id', 'title', 'full_title'));
 Route.get("/operation-types", async () => await Operation.query().select('id', 'title', 'full_title'));
+Route.get("/split-types", async () => await Change.query().select('id', 'change_type', 'change_type_title'));
 
 
 //FILTERS
@@ -127,6 +129,13 @@ Route.delete("/moviments/:id", async (ctx) => {
     "App/Controllers/Http/InvestmentsMovementsController"
   );
   return new InvestmentsMovementsController().deleteMov(ctx);
+});
+
+Route.post("/moviments/split", async (ctx) => {
+  const { default: InvestmentsMovementsController } = await import(
+    "App/Controllers/Http/InvestmentsMovementsController"
+  );
+  return new InvestmentsMovementsController().registerSplit(ctx);
 });
 
 
