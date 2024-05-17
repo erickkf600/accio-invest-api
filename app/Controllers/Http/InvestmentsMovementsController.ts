@@ -1,5 +1,4 @@
 import Movement from 'App/Models/Movement'
-import Change from 'App/Models/Change'
 import { HttpContextContract } from '@ioc:Adonis/Core/HttpContext'
 
 export default class InvestmentsMovementsController {
