@@ -26,7 +26,12 @@ services:
     ports:
       - "7098:80"
     environment:
-      - PMA_HOST=accio-db
+      - PMA_ARBITRARY:1
+      - PMA_HOST:mysql
+      - MYSQL_USERNAME:root
+      - MYSQL_ROOT_PASSWORD:admin
+    networks:
+      - accio_invest
   accio_invest:
     container_name: accio_invest
     restart: always

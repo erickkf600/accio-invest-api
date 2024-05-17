@@ -13,7 +13,7 @@ RUN npm ci
 COPY --chown=node:node . .
 
 FROM dependencies AS build
-RUN npm run build
+RUN node ace build --production
 
 FROM base AS production
 ENV NODE_ENV=production
@@ -24,4 +24,4 @@ RUN npm ci --production
 COPY --chown=node:node --from=build /home/node/accioInvest/build .
 EXPOSE $PORT
 # RUN node ace migration:run --force && node ace db:seed
-CMD [ "dumb-init", "node", "server.ts" ]
+CMD [ "dumb-init", "node", "server.js" ]
