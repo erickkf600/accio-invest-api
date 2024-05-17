@@ -141,26 +141,43 @@ export default class InvestmentsMovementsController {
 
   public async registerSplit(ctx: HttpContextContract) {
     const body: any = ctx.request.body()
-    const movement = await Movement
+    const movement = Movement
           .query()
           .where('cod', body.cod)
           .andWhere('type_operation', 1)
 
-      // const changeType = await Change.find(body.factor)
-      // const foundedItem = await movement
+      const foundedItem = await movement
 
-      movement.forEach(el =>{
+      const savePromises = foundedItem.map((el) => {
         if(body.factor === 1) {
           el.unity_value = +el.unity_value / body.to
           el.qtd = +el.qtd * body.to
+          el.save();
+          return true
         }else{
-          console.log(+el.unity_value / body.to)
+          return false
         }
-      })
+      });
+      await Promise.all(savePromises);
+      if(savePromises) {
+        const [_, monthRef, year] = body.date_operation.split('/')
+        const savePayload = {
+          cod: body.cod,
+          date_operation: body.date_operation,
+          qtd: 1,
+          type: body.type,
+          type_operation: body.operation_type,
+          unity_value: 0,
+          fee: 0,
+          obs: body.obs,
+          total: 0,
+          year: +year,
+          month_ref: +monthRef
+        }
+        await Movement.create(savePayload);
+        return savePayload
+      }
 
-      // await movement.save()
-
-    return movement
   }
 
 
@@ -250,7 +267,7 @@ export default class InvestmentsMovementsController {
 
   public async update(ctx: HttpContextContract) {
     const id: number = ctx.params.id;
-    const body: any = ctx.request.body()
+    const body: any = ctx.request.body()[0]
 
     const [_, monthRef, year] = body.date_operation.split('/')
 
@@ -324,7 +341,6 @@ export default class InvestmentsMovementsController {
     .preload('assetsType', (query) =>{
       query.select('title', 'full_title')
     })
-
     const response = movements.map((el: any) => {
       return {
         id: el.id,

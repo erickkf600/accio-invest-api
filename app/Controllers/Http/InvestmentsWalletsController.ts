@@ -125,8 +125,8 @@ export default class InvestmentsWalletsController {
         date_operation: res.date_operation,
         qtd: res.qtd,
         type: res.assetsType.title,
-        unity_value: res.unity_value,
-        total: res.total,
+        unity_value: +res.unity_value,
+        total: +res.total,
         month_ref: res.month_ref,
         year: res.year,
       }
@@ -228,10 +228,10 @@ export default class InvestmentsWalletsController {
           response.push({
             cod: res.cod,
             qtd: res.qtd,
-            purchase_price: res.unity_value,
+            purchase_price: +res.unity_value,
             type: res.assetsType.title,
             curr_price: request?.[i]?.scty?.SctyQtn.curPrc,
-            total_purch: res.total,
+            total_purch: +res.total,
             current_total: request?.[i]?.scty?.SctyQtn.curPrc * res.qtd,
             balance: bal,
             ralation: rel,

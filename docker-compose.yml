@@ -20,10 +20,13 @@ services:
       MYSQL_DATABASE: accio
     networks:
       - app-network
-  # phpmyadmin:
-  #   image: phpmyadmin/phpmyadmin
-  #   ports:
-  #     - "7300:80"
+  phpmyadmin:
+    image: phpmyadmin
+    restart: always
+    ports:
+      - "7098:80"
+    environment:
+      - PMA_HOST=accio-db
   accio_invest:
     container_name: accio_invest
     restart: always
