@@ -10,7 +10,7 @@ services:
     container_name: adonis-mysql
     restart: always
     ports:
-      - 3306:3306
+      - 3306:80
     expose:
       - "3306"
     environment:
@@ -26,12 +26,14 @@ services:
     ports:
       - "7098:80"
     environment:
-      - PMA_ARBITRARY:1
-      - PMA_HOST:mysql
-      - MYSQL_USERNAME:root
-      - MYSQL_ROOT_PASSWORD:admin
+      MYSQL_ROOT_PASSWORD: admin
+      PMA_HOST: adonis-mysql
+      PMA_USER: root
+      PMA_PASSWORD: admin
     networks:
-      - accio_invest
+      - app-network
+    depends_on:
+      - adonis-mysql
   accio_invest:
     container_name: accio_invest
     restart: always
