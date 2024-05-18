@@ -1,6 +1,6 @@
 version: "3.8"
 
-networks: # Specify the network for bridging
+networks:
   app-network:
     driver: bridge
 
@@ -9,20 +9,20 @@ services:
     image: mysql
     container_name: adonis-mysql
     restart: always
+    networks:
+      - app-network
     ports:
       - 3306:80
-    expose:
-      - "3306"
     environment:
       MYSQL_ROOT_PASSWORD: admin
       MYSQL_USER: deverick
       MYSQL_PASSWORD: 8294
       MYSQL_DATABASE: accio
-    networks:
-      - app-network
   phpmyadmin:
     image: phpmyadmin
     restart: always
+    networks:
+      - app-network
     ports:
       - "7098:80"
     environment:
@@ -30,13 +30,13 @@ services:
       PMA_HOST: adonis-mysql
       PMA_USER: root
       PMA_PASSWORD: admin
-    networks:
-      - app-network
     depends_on:
       - adonis-mysql
   accio_invest:
     container_name: accio_invest
     restart: always
+    networks:
+      - app-network
     build:
       context: .
       target: dependencies
@@ -52,5 +52,14 @@ services:
     command: dumb-init node ace serve --watch --node-args="--inspect=0.0.0.0"
     depends_on:
       - adonis-mysql
-    networks:
-      - app-network
+  # nginx:
+  #   image: nginx:1.23.2
+  #   container_name: accio-invest-api-nginx
+  #   ports:
+  #     - "4001:80"
+  #   volumes:
+  #     - ./nginx/nginx.conf:/etc/nginx/nginx.conf
+  #   depends_on:
+  #     - accio_invest
+
+
