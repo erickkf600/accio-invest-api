@@ -126,9 +126,11 @@ export default class InvestmentsMovementsController {
           await Movement.createMany(body)
           return true
          } catch (error) {
+          console.log(error)
           throw {
             code: 4,
             message: "Ocorreu um erro ao cadastrar",
+            error
           };
          }
       }else {

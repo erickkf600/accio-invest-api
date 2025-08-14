@@ -42,21 +42,25 @@ Route.get("/home/cdi/:year", async (ctx) => {
   );
   return new HomeController().getCDIComparation(ctx);
 });
-Route.get("/home/evolution/:type", async (ctx) => {
+Route.get("/home/evolution/:type/:page/:limit", async (ctx) => {
   const { default: HomeController } = await import(
     "App/Controllers/Http/HomeController"
   );
   return new HomeController().getPatrimonyEvolution(ctx);
 });
-
-
-
-Route.get("/wallet/history-aports", async () => {
-  const { default: InvestmentsWalletsController } = await import(
-    "App/Controllers/Http/InvestmentsWalletsController"
+Route.get("/home/evolution/chart", async () => {
+  const { default: HomeController } = await import(
+    "App/Controllers/Http/HomeController"
   );
-  return new InvestmentsWalletsController().aportsHistory();
+  return new HomeController().quarterlyData();
 });
+Route.get("/home/aports/:year", async (ctx) => {
+  const { default: HomeController } = await import(
+    "App/Controllers/Http/HomeController"
+  );
+  return new HomeController().AportsGraph(ctx);
+});
+
 
 Route.get("/wallet/assets-list", async () => {
   const { default: InvestmentsWalletsController } = await import(
@@ -145,5 +149,20 @@ Route.get("/estimate/list", async () => {
     "App/Controllers/Http/EstimatesController"
   );
   return new EstimatesController().show();
+});
+
+
+Route.post("/reports/medium-price", async (ctx) => {
+  const { default: InvestmentsReportsController } = await import(
+    "App/Controllers/Http/InvestmentsReportsController"
+  );
+  return new InvestmentsReportsController().pmHistory(ctx);
+});
+
+Route.get("/reports/history-aports", async () => {
+  const { default: InvestmentsReportsController } = await import(
+    "App/Controllers/Http/InvestmentsReportsController"
+  );
+  return new InvestmentsReportsController().aportsHistory();
 });
 

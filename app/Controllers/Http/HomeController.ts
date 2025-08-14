@@ -3,6 +3,7 @@ import Movement from 'App/Models/Movement'
 import Database from '@ioc:Adonis/Lucid/Database'
 import axios from 'axios'
 import InvestmentsWalletsController from './InvestmentsWalletsController'
+import { groupBy, map, orderBy, sumBy } from 'lodash'
 
 
 export default class HomeController {
@@ -44,22 +45,22 @@ public async cdiRequest(year: any){
     await movements.forEach((el: any) => {
       el.date_operation = el.date_operation.slice(-7)
       el.type = el.assetsType.title
-      el.hex = el.assetsType.hex
+      el.hex = this.hexGenerator()
       el.total = +el.total
       el.fee = +el.fee
       el.unity_value = +el.unity_value
     })
+
     if(!movements.length) return {resume: [], alocations: [], distribuition: [], aports: []}
     const resume = await this.resume(movements)
     const alocations = await this.removeDupliWithSum(movements, 1, 'type');
     const distribuition = await this.distribuition(movements)
-    const aports = await this.AportsGraph()
-    return {resume, alocations, distribuition, aports}
+
+    return {resume, alocations, distribuition}
   }
 
 //TODO REVER COMO SE CALCULA O RENDIMENTO
   private async resume(array: any){
-
     const total = await this.sumValues(array)
 
     const groupArrays = await this.arrayGroup(array)
@@ -69,10 +70,20 @@ public async cdiRequest(year: any){
 
     const patrimony = await this.getPatrimony(array)
 
+    const oldestDate = array
+  .map(item => {
+    const [month, year] = item.date_operation.split('/').map(Number);
+    return new Date(year, month - 1);
+  })
+  .reduce((min, curr) => curr < min ? curr : min);
+
+    const oldestYear = oldestDate.getFullYear();
+
     return {
       total: total,
       last: lastAport,
       last_dividend: lastDividends,
+      startYear: oldestYear,
       patrimony
     }
   }
@@ -165,8 +176,9 @@ public async cdiRequest(year: any){
     return realValue.reduce((acc: number, val: number) => acc + val, 0)
   }
 
-  public async AportsGraph() {
-    const year = new Date().getFullYear()
+  public async AportsGraph(ctx: HttpContextContract) {
+    // const year = new Date().getFullYear()
+    const year: number = ctx.params.year;
     const dividendsCurrent: any = await Movement.query()
     .select('cod', 'date_operation', 'qtd', 'unity_value', 'type', 'year', 'month_ref', 'type_operation')
     .select(Database.raw('round(sum(total), 2) as total'))
@@ -199,11 +211,19 @@ public async cdiRequest(year: any){
 
 
   public hexGenerator = () => {
-    let str = '#'
-    while (str.length < 7) {
-        str += Math.floor(Math.random() * 0x10).toString(16)
-    }
-    return str
+    const maxDarkValue = 100; // tonalidade - 100 escuro >++
+  const r = Math.floor(Math.random() * (maxDarkValue + 1))
+    .toString(16)
+    .padStart(2, '0');
+  const g = Math.floor(Math.random() * (maxDarkValue + 1))
+    .toString(16)
+    .padStart(2, '0');
+  const b = Math.floor(Math.random() * (maxDarkValue + 1))
+    .toString(16)
+    .padStart(2, '0');
+  return `#${r}${g}${b}`;
+    // const grayValue = Math.floor(Math.random() * 256).toString(16).padStart(2, '0');
+    // return `#${grayValue}${grayValue}${grayValue}`;
 }
 
 public async getCDIComparation(ctx: HttpContextContract) {
@@ -227,6 +247,8 @@ private async myResturnAsset(year: any) {
     if(founded) {
       val.valor = +founded?.rent.replace('%', '') as any
     }
+
+    val.data =  val.data.padStart(2, '0')
     return val
   })
 
@@ -236,102 +258,139 @@ private async myResturnAsset(year: any) {
 
   private async cdiData(year: number) {
     const cdiPercent = await this.cdiRequest(year)
-
-  return cdiPercent.map((el) =>{
-    return {
-      data: `${el.data.split('/')[1]}/${el.data.split('/')[2]}`,
-      valor: +el.valor
-    }
-  })
+    const fullYear = [...Array(12)].map((_, i: number) =>{
+      return  {
+        data: `${(i + 1).toString().padStart(2, '0')}/${year.toString().slice(2)}`,
+      valor: +cdiPercent[i]?.valor || null
+      }
+    })
+    return fullYear
   }
 
+
+  // rever essa logica - se basear no Patrimônio x Ganho em que deve incrementar cada mes indicando a evolução e para o grafico deve ser a soma trimestral
   public async getPatrimonyEvolution(ctx: HttpContextContract) {
 
     const type: 'month' | 'year' = ctx.params.type;
+    const page: number = ctx.params.page;
+    const limit: number = ctx.params.limit;
 
-    if(type === 'month') {
+    if(type === 'year') {
       const movements: any = await Movement.query()
-    .select('month_ref', 'year', 'type_operation')
-    .select(Database.raw('round(sum(total), 2) as total'))
-    .whereIn('type_operation', [1,3])
-    .groupBy('type_operation','month_ref', 'year')
-    .preload('month')
+      .select('year')
+      .select(Database.raw('round(sum(total), 2) as total'))
+      .where('type_operation', 1)
+      .groupBy('year')
+      .paginate(page, limit)
+        return movements
+    } else  {
+      let movements: any = await Movement.query()
+      .select('month_ref', 'year', 'type_operation')
+      .select(Database.raw('round(sum(total), 2) as total'))
+      .whereIn('type_operation', [1,3])
+      .groupBy('type_operation','month_ref', 'year')
+      .preload('month')
+      .orderBy('year', 'asc')
+      .orderBy('month_ref', 'asc')
+      .paginate(page, limit)
+      movements = movements.toJSON()
 
-     const mov = movements.filter((el: any) => el.type_operation === 1)
-      return mov
-    let sum = 0
-    const chartMap = mov.map((el: any) =>{
-      // const number = String(el.month_ref).padStart(2, '0');
+      const content = movements.data
 
-      if(el.type_operation === 1)
-        sum = sum + el.total
-      // else if(el.type_operation === 3) {
-      //   sum = el.total
-      // }
+      const groupedData = groupBy(content, item => `${item.month_ref}-${item.year}`);
+
+
+      const result = map(groupedData, (group, key) => {
+        const [_, year] = key.split('-').map(Number);
+        const firstItem = group[0];
+        const monthAbbrev = firstItem.month.title.toLowerCase().slice(0, 3); // "Nov" → "nov"
+        const formattedMonth = `${monthAbbrev}/${year.toString().slice(-2)}`; // "nov/22"
+        return {
+          total: sumBy(group, item => parseFloat(item.total)).toFixed(2),
+          month: formattedMonth,
+        };
+      });
       return {
-        month_num: `${el.month.num}/${el.year}`,
-        total_fees: sum,
-        total: el.total,
-        type: el.type_operation
+        total: movements.meta.total,
+        current_page: movements.meta.current_page,
+        per_page: movements.meta.per_page,
+        data: result
       }
-    })
-    chartMap.sort((a, b) => {
-      const [monthA, yearA] = a.month_num.split('/');
-      const [monthB, yearB] = b.month_num.split('/');
-      return yearB - yearA || monthB - monthA
-    });
+    }
 
-    // let result: any = []
+  }
 
-    // chartMap.reduce((res, value) => {
-    //   if (!res[value.month_num]) {
-    //     res[value.month_num] = { month_num: value.month_num, total: 0 };
-    //     result.push(res[value.month_num])
-    //   }
-    //   res[value.month_num].total += value.total;
-    //   return res;
-    // }, {});
-      //   const summedData = chartMap.reduce((acc, item) => {
-      //     const existingItem = acc.find((x) => x.month_num === item.month_num);
+  async quarterlyData(){
 
-      //     if (existingItem) {
-      //         existingItem.total += item.total;
-      //         existingItem.total_fees += item.total_fees;
-      //     } else {
-      //         acc.push({ ...item });
-      //     }
+    const quarterly: any = await Movement.query()
+    .select('year', "month_ref")
+    .select(Database.raw('CEIL(month_ref/3) as quarter')) // Trimestre (1-4)
+    .select(Database.raw('MIN(month_ref) as first_month')) // Primeiro mês do trimestre
+    .select(Database.raw('MAX(month_ref) as last_month'))  // Último mês do trimestre
+    .select(Database.raw('round(sum(total), 2) as total'))
+    .whereIn('type_operation', [1, 3])
+    .groupBy('year', 'quarter') // Agrupa por ano e trimestre
+    .orderBy('year', 'asc')
+    .orderBy('quarter', 'asc');
 
-      //     return acc;
-      // }, []);
+      return quarterly
 
-    return chartMap
-      // const investmetControl = new InvestmentsWalletsController()
-      // const myApports: any = await investmetControl.aportsHistory('desc')
-      // const myApports: any = await investmetControl.patrimonyGainList('desc')
-      // let sum = 0
-      // const aportsIncremet = myApports.map(({total_fees, month}: any) => {
-      //   sum = sum + total_fees
-      //   return {
-      //     month,
-      //     total: +sum.toFixed(2)
-      //   }
-      // });
-    //   const valoresTrimestrais = dados.reduce((acc, dado) => {
-    //     const [mes, ano] = dado.month.split('/');
-    //     const trimestre = Math.ceil(parseInt(mes) / 3); // Calcula o trimestre
-    //     const chave = `Q${trimestre}/${ano}`; // Cria uma chave trimestral
+    // const quarterly: any = await Movement.query()
+    //   .select('month_ref', 'year', 'type_operation')
+    //   .select(Database.raw('round(sum(total), 2) as total'))
+    //   .whereIn('type_operation', [1,3])
+    //   .groupBy('type_operation','month_ref', 'year')
+    //   .preload('month')
+    //   .orderBy('year', 'asc')
+    //   .orderBy('month_ref', 'asc')
 
-    //     if (!acc[chave]) {
-    //         acc[chave] = 0;
+    //   const getQuarter = (month) => Math.ceil(month / 3);
+
+    //   // Processar os dados para agrupar por trimestre
+    //   const groupedByQuarter = quarterly.reduce((acc, movement) => {
+    //     const quarter = getQuarter(movement.month_ref);
+    //     const key = `${movement.year}-T${quarter}`;
+
+    //     if (!acc[key]) {
+    //       acc[key] = {
+    //         year: movement.year,
+    //         quarter: quarter,
+    //         start_month: movement.month_ref - ((movement.month_ref - 1) % 3),
+    //         end_month: movement.month_ref + (2 - ((movement.month_ref - 1) % 3)),
+    //         operations: {},
+    //         months: []
+    //       };
     //     }
 
-    //     acc[chave] += dado.total;
+    //     // Agrupar por type_operation
+    //     if (!acc[key].operations[movement.type_operation]) {
+    //       acc[key].operations[movement.type_operation] = 0;
+    //     }
+    //     acc[key].operations[movement.type_operation] += parseFloat(movement.total);
+
+    //     // Manter informações dos meses individuais
+    //     acc[key].months.push(movement);
 
     //     return acc;
-    // }, {});
+    //   }, {});
 
-    // return aportsIncremet
-    }
+    //   const result = Object.values(groupedByQuarter).map((quarter: any) => {
+    //     return  quarter.months.map((el: any) =>{
+    //       const monthAbbrev = el.month.title.toLowerCase().slice(0, 3); // "Nov" → "nov"
+    //       const formattedMonth = `${monthAbbrev}/${el.year.toString().slice(-2)}`; // "nov/22"
+    //       return {
+    //         label: formattedMonth,
+    //         value: el.total
+    //       }
+    //     })
+    //     return {
+    //       value: quarter.months.total,
+    //       label: quarter.months
+
+    //     }
+    //   });
+
+    //   return result
 
   }
 }

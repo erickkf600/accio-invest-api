@@ -1,84 +1,48 @@
+import Env from '@ioc:Adonis/Core/Env';
+import { HttpContextContract } from '@ioc:Adonis/Core/HttpContext';
 import Database from '@ioc:Adonis/Lucid/Database';
 import Movement from 'App/Models/Movement';
-import { HttpContextContract } from '@ioc:Adonis/Core/HttpContext'
 import axios from 'axios';
 
 export default class InvestmentsWalletsController {
 
-  public async b3Rquest(symbols: any){
-      const req = await axios.get(`https://cotacao.b3.com.br/mds/api/v1/instrumentQuotation/${symbols}`)
-      .then((b3) => {
-        return b3.data?.Trad
+  public async accioTickerRequest(symbols: any){
+      const req = await axios.get(`${Env.get('TICKER_HOST')}/tickers?ticker=${symbols}`)
+      .then(({data}) => {
+        return data
       })
       .catch(() => {
         throw {
           code: 4,
-          message: "Ocorreu um erro ao buscar na api cotacao.b3.com.br",
+          message: `Ocorreu um erro ao buscar na api ${Env.get('TICKER_HOST')}`,
         };
       })
 
       return req
   }
-  public async aportsHistory(order: string = 'asc') {
-    const movements: any = await Movement.query()
-    .select('month_ref', 'year')
-    .select(Database.raw('group_concat(cod) as cod'))
-    .select(Database.raw('group_concat(unity_value) as unity_value'))
-    .select(Database.raw('group_concat(qtd) as qtd'))
-    .select(Database.raw('group_concat(fee) as fee'))
-    .select(Database.raw('round(sum(total), 2) as total'))
-    .where( 'type_operation', 1)
-    .groupBy('year','month_ref')
-    .orderBy('year', 'asc')
-    .orderBy('month_ref', 'asc')
-    .preload('month')
-
-
-    const chartMap = movements.map((el: any) =>{
-      // const number = String(el.month_ref).padStart(2, '0');
-      let sum = 0
-      const cods = el.cod.split(',')
-      const vals = el.unity_value.split(',')
-      const qtds = el.qtd.split(',')
-      const fees = el.fee.split(',')
-      const setItem = cods.map((cd: any, i: number) =>{
-        sum += +fees[i]
-
-        return {
-          asset: cd,
-          value: +vals[i] * +qtds[i],
-          qtd: +qtds[i],
-          fee: +fees[i]
-        }
-      })
-      return {
-        value: setItem.reduce((acc, {value}) => acc+value ,0),
-        month: `${el.month.title}/${el.year}`,
-        month_num: el.month.num,
-        items: setItem,
-        total_fees: el.total,
-        fees: sum
-      }
+  public async b3Rquest(symbols: any){
+    const req = await axios.get(`https://cotacao.b3.com.br/mds/api/v1/instrumentQuotation/${symbols}`)
+    .then((b3) => {
+      return b3.data?.Trad
     })
-    chartMap.sort((a, b) => {
-      const [, yearA] = a.month.split('/');
-      const [, yearB] = b.month.split('/');
-      if(order === 'asc')
-        return yearB - yearA || b.month_num - a.month_num;
-      if(order === 'desc')
-        return yearA - yearB || a.month_num - b.month_num;
-  });
-    return chartMap
-  }
+    .catch(() => {
+      throw {
+        code: 4,
+        message: "Ocorreu um erro ao buscar na api cotacao.b3.com.br",
+      };
+    })
 
+    return req
+}
   public async assetsList() {
     const movements: any = await Movement.query()
-    .groupBy('cod')
     .select('id', 'cod', 'type', 'qtd', 'total')
+    .groupBy('cod')
     .select(Database.raw('round(sum(total), 2) as total'))
     .where('type_operation', 1)
     .select(Database.raw('round(sum(qtd), 2) as qtd'))
     .preload('assetsType')
+
 
     const dividends: any = await Movement.query()
     .groupBy('cod')
@@ -190,57 +154,89 @@ export default class InvestmentsWalletsController {
 
   public async VariationsList() {
     const movements: any = await Movement.query()
-    .select('cod', 'type', 'unity_value', 'date_operation', 'total', 'qtd')
-    .where('type_operation', 1)
+    .select('cod', 'type', 'unity_value', 'date_operation')
+    .select(Database.raw('ROUND(SUM(CASE WHEN type_operation = 1 THEN qtd ELSE 0 END), 2) as qtd'))
+    .select(Database.raw('ROUND(SUM(CASE WHEN type_operation = 1 THEN fee ELSE 0 END), 2) as fee'))
+    .select(Database.raw('ROUND(SUM(CASE WHEN type_operation = 1 THEN total ELSE 0 END), 2) as total'))
+    .select(Database.raw('ROUND(SUM(CASE WHEN type_operation = 3 THEN total ELSE 0 END), 2) as dividends'))
+    .whereIn('type_operation', [1, 3])
     .preload('assetsType')
-    //AJUSTE DA QUANTIDADE -- NÃO É NESCESSARIO
+    .groupBy('cod');
 
-    // const grupos = groupBy(movements, 'cod');
-    // const newValue = map(grupos, (res) => ({
-    //   cod: res[0].cod,
-    //   qtd: sumBy(res, 'qtd'),
-    //   type: res.at(-1).type,
-    //   unity_value: res.at(-1).unity_value,
-    //   date_operation: res.at(-1).date_operation,
-    //   total: res.at(-1).total,
-    //   assetsType: res.at(-1).assetsType,
-    // }));
-
-    const newValue: any = []
-    const lookupObject: any = {}
-    Object.keys(movements).forEach(key => {
-      lookupObject[movements[key]['cod']] = movements[key]
-   })
-
-   Object.keys(lookupObject).forEach((key: any) => {
-    newValue.push(lookupObject[key])
-  })
-
-    if(newValue.length){
-      const symbols = newValue.map((el: any) => el.cod).join('|')
-      const request = await this.b3Rquest(symbols)
+    if(movements.length){
+      const symbols = movements.map((el: any) => el.cod).join('-')
+      const request = await this.accioTickerRequest(symbols)
       let response: any = []
-      newValue.forEach((res: any, i: number) =>{
-        const bal = request?.[i]?.scty?.SctyQtn.curPrc * res.qtd - res.total
+      movements.forEach((res: any, i: number) =>{
+        res.qtd = +res.qtd
+        res.total = +res.total
+        res.unity_value = +res.unity_value
+        res.fee = +res.fee
+        res.dividends = +res.dividends
+
+        const medium_price = (res.total - res.fee) / res.qtd
+        const currentTotal = (request?.[i]?.curPrc * res.qtd) + res.fee
+        const bal = currentTotal - res.total
         const rel = Math.sign(bal) === 1 ? '+' : (Math.sign(bal) === 0 ? '' : '-')
-        const percent = rel+parseFloat(Math.abs(bal / res.total * 100).toString()).toFixed(2)+'%'
+        const percent = parseFloat((((request?.[i]?.curPrc - medium_price) / medium_price) * 100).toFixed(2))+'%'
         if(res.type == 1 || res.type == 2){
           response.push({
             cod: res.cod,
             qtd: res.qtd,
-            purchase_price: +res.unity_value,
             type: res.assetsType.title,
-            curr_price: request?.[i]?.scty?.SctyQtn.curPrc,
+            curr_price: request?.[i]?.curPrc,
             total_purch: +res.total,
-            current_total: request?.[i]?.scty?.SctyQtn.curPrc * res.qtd,
-            balance: bal,
+            current_total: parseFloat(currentTotal.toFixed(2)),
+            balance: parseFloat(bal.toFixed(2)),
+            percet:percent,
             ralation: rel,
-            percet:percent
+            medium_price: parseFloat(medium_price.toFixed(2)),
+            dividends: res.dividends
           })
         }
       })
-      return response
+
+     return response
     }
+
+    return []
+
+  //   const newValue: any = []
+  //   const lookupObject: any = {}
+  //   Object.keys(movements).forEach(key => {
+  //     lookupObject[movements[key]['cod']] = movements[key]
+  //  })
+
+  //  Object.keys(lookupObject).forEach((key: any) => {
+  //   newValue.push(lookupObject[key])
+  // })
+
+  //   if(newValue.length){
+  //     const symbols = newValue.map((el: any) => el.cod).join('-')
+
+  //     const request = await this.accioTickerRequest(symbols)
+  //     let response: any = []
+  //     newValue.forEach((res: any, i: number) =>{
+  //       const bal = request?.[i]?.curPrc * res.qtd - res.total
+  //       const rel = Math.sign(bal) === 1 ? '+' : (Math.sign(bal) === 0 ? '' : '-')
+  //       const percent = rel+parseFloat(Math.abs(bal / res.total * 100).toString()).toFixed(2)+'%'
+  //       if(res.type == 1 || res.type == 2){
+  //         response.push({
+  //           cod: res.cod,
+  //           qtd: res.qtd,
+  //           purchase_price: +res.unity_value,
+  //           type: res.assetsType.title,
+  //           curr_price: request?.[i]?.curPrc,
+  //           total_purch: +res.total,
+  //           current_total: request?.[i]?.curPrc * res.qtd,
+  //           balance: bal,
+  //           ralation: rel,
+  //           percet:percent
+  //         })
+  //       }
+  //     })
+  //     return response
+  //   }
 
     return []
   }

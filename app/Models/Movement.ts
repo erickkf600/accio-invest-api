@@ -39,6 +39,9 @@ export default class Movement extends BaseModel {
   public total: number
 
   @column()
+  public dividends: number
+
+  @column()
   public year: number
 
   // @column.dateTime({
