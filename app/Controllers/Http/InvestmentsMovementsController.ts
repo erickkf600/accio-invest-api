@@ -42,7 +42,8 @@ export default class InvestmentsMovementsController {
 
     return response
   }
-
+//TODO API CDI https://api.bcb.gov.br/dados/serie/bcdata.sgs.4391/dados?formato=json
+//DIARIO https://api.bcb.gov.br/dados/serie/bcdata.sgs.12/dados?formato=json&dataInicial=01/01/2023&dataFinal=31/12/2023
   public async showByYear(ctx: HttpContextContract) {
     const year: number = ctx.params.year;
     const movements: any = await Movement.query()
@@ -125,9 +126,11 @@ export default class InvestmentsMovementsController {
           await Movement.createMany(body)
           return true
          } catch (error) {
+          console.log(error)
           throw {
             code: 4,
             message: "Ocorreu um erro ao cadastrar",
+            error
           };
          }
       }else {
@@ -135,6 +138,47 @@ export default class InvestmentsMovementsController {
       }
     }
     return true
+  }
+
+  public async registerSplit(ctx: HttpContextContract) {
+    const body: any = ctx.request.body()
+    const movement = Movement
+          .query()
+          .where('cod', body.cod)
+          .andWhere('type_operation', 1)
+
+      const foundedItem = await movement
+
+      const savePromises = foundedItem.map((el) => {
+        if(body.factor === 1) {
+          el.unity_value = +el.unity_value / body.to
+          el.qtd = +el.qtd * body.to
+          el.save();
+          return true
+        }else{
+          return false
+        }
+      });
+      await Promise.all(savePromises);
+      if(savePromises) {
+        const [_, monthRef, year] = body.date_operation.split('/')
+        const savePayload = {
+          cod: body.cod,
+          date_operation: body.date_operation,
+          qtd: 1,
+          type: body.type,
+          type_operation: body.operation_type,
+          unity_value: 0,
+          fee: 0,
+          obs: body.obs,
+          total: 0,
+          year: +year,
+          month_ref: +monthRef
+        }
+        await Movement.create(savePayload);
+        return savePayload
+      }
+
   }
 
 
@@ -145,6 +189,7 @@ export default class InvestmentsMovementsController {
     .andWhereNot('type_operation', 2)
 
     const foundedItem = await moviment
+
     foundedItem.sort((a, b) => (b.qtd > a.qtd ? -1 : 1))
     if(foundedItem.length){
       const qtd = foundedItem.reduce((acc, {qtd}) => acc + qtd, 0)
@@ -223,7 +268,7 @@ export default class InvestmentsMovementsController {
 
   public async update(ctx: HttpContextContract) {
     const id: number = ctx.params.id;
-    const body: any = ctx.request.body()
+    const body: any = ctx.request.body()[0]
 
     const [_, monthRef, year] = body.date_operation.split('/')
 
@@ -297,7 +342,6 @@ export default class InvestmentsMovementsController {
     .preload('assetsType', (query) =>{
       query.select('title', 'full_title')
     })
-
     const response = movements.map((el: any) => {
       return {
         id: el.id,

@@ -1,0 +1,64 @@
+version: "3.8"
+
+networks:
+  mysql_host:
+    driver: bridge
+
+services:
+  # adonis-mysql:
+  #   image: mysql
+  #   container_name: adonis-mysql
+  #   restart: always
+  #   networks:
+  #     - app-network
+  #   ports:
+  #     - 3306:80
+  #   environment:
+  #     MYSQL_ROOT_PASSWORD: admin
+  #     MYSQL_USER: deverick
+  #     MYSQL_PASSWORD: 8294
+  #     MYSQL_DATABASE: accio
+  # phpmyadmin:
+  #   image: phpmyadmin
+  #   restart: always
+  #   networks:
+  #     - app-network
+  #   ports:
+  #     - "7098:80"
+  #   environment:
+  #     MYSQL_ROOT_PASSWORD: admin
+  #     PMA_HOST: adonis-mysql
+  #     PMA_USER: root
+  #     PMA_PASSWORD: admin
+  #   depends_on:
+  #     - adonis-mysql
+  accio_invest:
+    container_name: accio_invest
+    restart: always
+    networks:
+      - mysql_host
+    build:
+      context: .
+      target: dependencies
+    ports:
+      - ${PORT}:${PORT}
+      - 9229:9229
+    # command:
+    #   - --sql_mode=STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION
+    env_file:
+      - .env
+    volumes:
+      - ./:/home/node/app
+      # Uncomment the below line if you developing on MacOS
+      #- /home/node/app/node_modules
+    # command: dumb-init node ace serve --watch --node-args="--inspect=0.0.0.0"
+    command: dumb-init node ace serve
+  # nginx:
+  #   image: nginx:1.23.2
+  #   container_name: accio-invest-api-nginx
+  #   ports:
+  #     - "4001:80"
+  #   volumes:
+  #     - ./nginx/nginx.conf:/etc/nginx/nginx.conf
+  #   depends_on:
+  #     - accio_invest

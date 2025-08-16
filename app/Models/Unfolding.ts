@@ -1,10 +1,11 @@
-import { BaseModel, column, HasOne, hasOne } from '@ioc:Adonis/Lucid/Orm'
 import { DateTime } from 'luxon'
-import Month from './Month'
+import { BaseModel, HasOne, column, hasOne } from '@ioc:Adonis/Lucid/Orm'
 import Operation from './Operation'
+import Month from './Month'
 import Type from './Type'
+import Change from './Change'
 
-export default class Movement extends BaseModel {
+export default class Unfolding extends BaseModel {
   @column({ isPrimary: true })
   public id: number
 
@@ -15,22 +16,22 @@ export default class Movement extends BaseModel {
   public date_operation: string
 
   @column()
-  public qtd: number
+  public type: number
 
   @column()
-  public type: number
+  public from: number
+
+  @column()
+  public to: number
+
+  @column()
+  public factor: number
 
   @column()
   public type_operation: number
 
   @column()
-  public unity_value: number
-
-  @column()
   public obs: string
-
-  @column()
-  public fee: number
 
   @column()
   public month_ref: number
@@ -39,17 +40,8 @@ export default class Movement extends BaseModel {
   public total: number
 
   @column()
-  public dividends: number
-
-  @column()
   public year: number
 
-  // @column.dateTime({
-  //   autoCreate: true,
-  //   serialize: (value: DateTime | null) => {
-  //     return value ? value.toFormat('yyyy-M-d') : value
-  //   },
-  //  })
   @column.dateTime({ autoCreate: true, autoUpdate: true })
   public 	created_at: DateTime
 
@@ -74,4 +66,9 @@ export default class Movement extends BaseModel {
   })
   public month: HasOne<typeof Month>
 
+  @hasOne(() => Change, {
+    localKey: 'factor',
+    foreignKey: 'id',
+  })
+  public change: HasOne<typeof Change>
 }

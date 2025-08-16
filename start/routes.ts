@@ -1,4 +1,5 @@
 import Route from '@ioc:Adonis/Core/Route'
+import Change from 'App/Models/Change'
 import Month from 'App/Models/Month'
 import Operation from 'App/Models/Operation'
 import Type from 'App/Models/Type'
@@ -10,6 +11,7 @@ Route.get("/months", async () => await Month.query().orderBy('num'));
 Route.get("/users", async () => await User.query().select('id', 'name', 'user', 'email'));
 Route.get("/assets", async () => await Type.query().select('id', 'title', 'full_title'));
 Route.get("/operation-types", async () => await Operation.query().select('id', 'title', 'full_title'));
+Route.get("/split-types", async () => await Change.query().select('id', 'change_type', 'change_type_title'));
 
 
 //FILTERS
@@ -34,15 +36,31 @@ Route.get("/home/resume", async (ctx) => {
   );
   return new HomeController().showHome(ctx);
 });
-
-
-
-Route.get("/wallet/history-aports", async () => {
-  const { default: InvestmentsWalletsController } = await import(
-    "App/Controllers/Http/InvestmentsWalletsController"
+Route.get("/home/cdi/:year", async (ctx) => {
+  const { default: HomeController } = await import(
+    "App/Controllers/Http/HomeController"
   );
-  return new InvestmentsWalletsController().aportsHistory();
+  return new HomeController().getCDIComparation(ctx);
 });
+Route.get("/home/evolution/:type", async (ctx) => {
+  const { default: HomeController } = await import(
+    "App/Controllers/Http/HomeController"
+  );
+  return new HomeController().getPatrimonyEvolution(ctx);
+});
+Route.get("/home/evolution/chart", async () => {
+  const { default: HomeController } = await import(
+    "App/Controllers/Http/HomeController"
+  );
+  return new HomeController().quarterlyData();
+});
+Route.get("/home/aports/:year", async (ctx) => {
+  const { default: HomeController } = await import(
+    "App/Controllers/Http/HomeController"
+  );
+  return new HomeController().AportsGraph(ctx);
+});
+
 
 Route.get("/wallet/assets-list", async () => {
   const { default: InvestmentsWalletsController } = await import(
@@ -75,6 +93,13 @@ Route.get("/wallet/dividends-graph/:year", async (ctx) => {
     "App/Controllers/Http/InvestmentsWalletsController"
   );
   return new InvestmentsWalletsController().DividendsGraph(ctx);
+});
+
+Route.post("/wallet/ticker-earnings", async (ctx) => {
+  const { default: InvestmentsWalletsController } = await import(
+    "App/Controllers/Http/InvestmentsWalletsController"
+  );
+  return new InvestmentsWalletsController().earnings(ctx);
 });
 
 Route.get("/moviments/list/:page/:limit", async (ctx) => {
@@ -117,6 +142,13 @@ Route.delete("/moviments/:id", async (ctx) => {
   return new InvestmentsMovementsController().deleteMov(ctx);
 });
 
+Route.post("/moviments/split", async (ctx) => {
+  const { default: InvestmentsMovementsController } = await import(
+    "App/Controllers/Http/InvestmentsMovementsController"
+  );
+  return new InvestmentsMovementsController().registerSplit(ctx);
+});
+
 
 
 Route.get("/estimate/list", async () => {
@@ -125,3 +157,20 @@ Route.get("/estimate/list", async () => {
   );
   return new EstimatesController().show();
 });
+
+
+Route.post("/reports/medium-price", async (ctx) => {
+  const { default: InvestmentsReportsController } = await import(
+    "App/Controllers/Http/InvestmentsReportsController"
+  );
+  return new InvestmentsReportsController().pmHistory(ctx);
+});
+
+Route.get("/reports/history-aports", async () => {
+  const { default: InvestmentsReportsController } = await import(
+    "App/Controllers/Http/InvestmentsReportsController"
+  );
+  return new InvestmentsReportsController().aportsHistory();
+});
+
+
