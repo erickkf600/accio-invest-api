@@ -42,7 +42,7 @@ Route.get("/home/cdi/:year", async (ctx) => {
   );
   return new HomeController().getCDIComparation(ctx);
 });
-Route.get("/home/evolution/:type/:page/:limit", async (ctx) => {
+Route.get("/home/evolution/:type", async (ctx) => {
   const { default: HomeController } = await import(
     "App/Controllers/Http/HomeController"
   );
@@ -93,6 +93,13 @@ Route.get("/wallet/dividends-graph/:year", async (ctx) => {
     "App/Controllers/Http/InvestmentsWalletsController"
   );
   return new InvestmentsWalletsController().DividendsGraph(ctx);
+});
+
+Route.post("/wallet/ticker-earnings", async (ctx) => {
+  const { default: InvestmentsWalletsController } = await import(
+    "App/Controllers/Http/InvestmentsWalletsController"
+  );
+  return new InvestmentsWalletsController().earnings(ctx);
 });
 
 Route.get("/moviments/list/:page/:limit", async (ctx) => {
@@ -165,4 +172,5 @@ Route.get("/reports/history-aports", async () => {
   );
   return new InvestmentsReportsController().aportsHistory();
 });
+
 

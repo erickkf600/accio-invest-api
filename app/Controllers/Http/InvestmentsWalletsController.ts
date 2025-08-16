@@ -3,9 +3,24 @@ import { HttpContextContract } from '@ioc:Adonis/Core/HttpContext';
 import Database from '@ioc:Adonis/Lucid/Database';
 import Movement from 'App/Models/Movement';
 import axios from 'axios';
+import { groupBy } from 'lodash';
 
 export default class InvestmentsWalletsController {
 
+  private async accioTickerEarningsRequest(body: any){
+    const req = await axios.post(`${Env.get('TICKER_HOST')}/proventos`, body)
+    .then(({ data }) => data)
+    .catch((error) => {
+        throw {
+            code: 4,
+            message: `Erro na API ${Env.get('TICKER_HOST')}`,
+            details: error.response?.data || error.message,
+            status: error.response?.status
+        };
+    });
+
+    return req
+}
   public async accioTickerRequest(symbols: any){
       const req = await axios.get(`${Env.get('TICKER_HOST')}/tickers?ticker=${symbols}`)
       .then(({data}) => {
@@ -99,15 +114,22 @@ export default class InvestmentsWalletsController {
   }
 
 
-  public async patrimonyGainList(order: string = 'asc') {
+  public async patrimonyGainList(order: string = 'asc', query?: any) {
     // SELECT movements.month_ref, movements.year, round(sum(total), 2) as 'total' FROM movements WHERE type_operation = 1 GROUP BY movements.month_ref, movements.year
-    const movements: any = await Movement.query()
-    .select('month_ref', 'year', 'type_operation', 'total')
-    .select(Database.raw('round(sum(total), 2) as total'))
-    .groupBy('month_ref', 'year', 'type_operation')
-    .orderBy('year', 'asc')
-    .orderBy('month_ref', 'asc')
-    .whereIn('type_operation', [1,3])
+
+    let movements
+
+    if(!query) {
+      movements = await Movement.query()
+      .select('month_ref', 'year', 'type_operation', 'total')
+      .select(Database.raw('round(sum(total), 2) as total'))
+      .groupBy('month_ref', 'year', 'type_operation')
+      .orderBy('year', 'asc')
+      .orderBy('month_ref', 'asc')
+      .whereIn('type_operation', [1,3])
+    }else{
+      movements = query
+    }
 
     const dividends = movements.filter((el: any) => el.type_operation === 3)
     const mov = movements.filter((el: any) => el.type_operation === 1)
@@ -293,5 +315,44 @@ export default class InvestmentsWalletsController {
         }
     }
     return (num / si[index].v).toFixed(2).replace(/\.0+$|(\.[0-9]*[1-9])0+$/, "$1") + si[index].s;
+  }
+
+  public async earnings(ctx: HttpContextContract) {
+    const body: any = ctx.request.body()
+
+    const movements: any = await Movement.query()
+    .select('id', 'cod', 'type', 'qtd', 'total')
+    .groupBy('cod')
+    .select(Database.raw('round(sum(total), 2) as total'))
+    .where('type_operation', 1)
+    .select(Database.raw('round(sum(qtd), 2) as qtd'))
+
+    const payload = Object.assign(body, {
+      papeis_tipos: movements.map((mov) => ({
+        papel: mov.cod,
+        tipo: mov.type
+      }))
+    })
+    const req = await this.accioTickerEarningsRequest(payload)
+
+    const flattened = req.flatMap(item =>
+      item.proventos.map(p => ({
+        payment_date: p.payment_date,
+        ticker: item.ticker,
+        percent: p.percent,
+        value: p.value,
+        date_com: p.date_com
+      }))
+    );
+
+    // 2. Agrupar por payment_date
+    const grouped = groupBy(flattened, 'payment_date');
+
+    const result = Object.entries(grouped).map(([payment_date, dividends]) => ({
+      payment_date,
+      dividends: dividends.map(({ payment_date, ...rest }) => rest)
+    }))
+
+    return result
   }
 }

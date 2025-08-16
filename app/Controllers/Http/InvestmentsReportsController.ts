@@ -1,13 +1,13 @@
 import { HttpContextContract } from '@ioc:Adonis/Core/HttpContext';
 import Database from '@ioc:Adonis/Lucid/Database';
 import Movement from 'App/Models/Movement';
+
 /**
  * NESSE CONTROLLER CONTEM OS ITENS DE RELATÓRIO
  * [His de preço médio, His de aports, His de dividendos, His de vendas]
  */
 
 export default class InvestmentsReportsController {
-
 
   public async pmHistory(ctx: HttpContextContract) {
     const body: any = ctx.request.body()
@@ -139,4 +139,5 @@ export default class InvestmentsReportsController {
   });
     return chartMap
   }
+
 }
