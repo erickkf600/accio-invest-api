@@ -142,14 +142,6 @@ Route.delete("/moviments/:id", async (ctx) => {
   return new InvestmentsMovementsController().deleteMov(ctx);
 });
 
-Route.post("/moviments/split", async (ctx) => {
-  const { default: InvestmentsMovementsController } = await import(
-    "App/Controllers/Http/InvestmentsMovementsController"
-  );
-  return new InvestmentsMovementsController().registerSplit(ctx);
-});
-
-
 
 Route.get("/estimate/list", async () => {
   const { default: EstimatesController } = await import(

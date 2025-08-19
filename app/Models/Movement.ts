@@ -3,6 +3,8 @@ import { DateTime } from 'luxon'
 import Month from './Month'
 import Operation from './Operation'
 import Type from './Type'
+import User from './User'
+import Asset from './Asset'
 
 export default class Movement extends BaseModel {
   @column({ isPrimary: true })
@@ -13,6 +15,9 @@ export default class Movement extends BaseModel {
 
   @column()
   public date_operation: string
+
+  @column()
+  public rentability: string
 
   @column()
   public qtd: number
@@ -35,6 +40,10 @@ export default class Movement extends BaseModel {
   @column()
   public month_ref: number
 
+
+  @column()
+  public user_id: number
+
   @column()
   public total: number
 
@@ -55,6 +64,18 @@ export default class Movement extends BaseModel {
 
   @column.dateTime({ autoCreate: true, autoUpdate: true })
   public updated_at: DateTime
+
+  @hasOne(() => Asset, {
+    localKey: 'cod',
+    foreignKey: 'cod',
+  })
+  public assets: HasOne<typeof Asset>
+
+  @hasOne(() => User, {
+    localKey: 'user_id',
+    foreignKey: 'id',
+  })
+  public user: HasOne<typeof User>
 
   @hasOne(() => Type, {
     localKey: 'type',

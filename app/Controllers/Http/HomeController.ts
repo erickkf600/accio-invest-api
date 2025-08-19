@@ -1,11 +1,15 @@
 import { HttpContextContract } from '@ioc:Adonis/Core/HttpContext'
 import Database from '@ioc:Adonis/Lucid/Database'
+import Asset from 'App/Models/Asset'
 import Movement from 'App/Models/Movement'
+import TickerRequests from 'App/services/ticker-requests.service'
 import axios from 'axios'
-import { groupBy, map, sumBy } from 'lodash'
+import { groupBy, map, mapValues, sumBy } from 'lodash'
 import InvestmentsWalletsController from './InvestmentsWalletsController'
 
 export default class HomeController {
+
+  private ticker = new TickerRequests()
   public async b3Rquest(symbols: any){
     const req = await axios.get(`https://cotacao.b3.com.br/mds/api/v1/instrumentQuotation/${symbols}`)
     .then((b3) => {
@@ -30,148 +34,90 @@ public async cdiRequest(year: any){
 }
 
   public async showHome(_ctx: HttpContextContract) {
-    const movements: any = await Movement.query()
-    .select('id', 'total', 'fee', 'month_ref', 'unity_value', 'cod', 'date_operation', 'qtd', 'type_operation', 'type')
+    const assets: any = await Asset.query()
+    .select('id', 'total', 'cod', 'quantity', 'total_rendi', 'type')
+    .preload('assetsType')
+
+    let movements: any = await Movement.query()
+    .select('id', 'total', 'fee', 'month_ref', 'unity_value', 'cod', 'date_operation', 'qtd', 'type_operation', 'type', 'year')
     .orderBy('year', 'desc')
     .orderBy('month_ref', 'desc')
-    .whereNot('type_operation', 2)
-    .preload('assetsType', (query) =>{
-      query.select('title', 'full_title', 'hex')
-    })
-    .preload('month')
+    .whereIn('type_operation', [1,3])
+    movements = movements.map(m => m.toJSON());
 
-    await movements.forEach((el: any) => {
-      el.date_operation = el.date_operation.slice(-7)
-      el.type = el.assetsType.title
-      el.hex = this.hexGenerator()
-      el.total = +el.total
-      el.fee = +el.fee
-      el.unity_value = +el.unity_value
-    })
+    const total = assets.reduce((acc: any, {total}: any) => acc+Number(total), 0)
+    const last = this.lastByMonth(movements, 1)
+    const last_dividend = this.lastByMonth(movements, 3)
+    const startYear = last[last.length - 1].monthYear.split('/')[1]
 
-    if(!movements.length) return {resume: [], alocations: [], distribuition: [], aports: []}
-    const resume = await this.resume(movements)
-    const alocations = await this.removeDupliWithSum(movements, 1, 'type');
-    const distribuition = await this.distribuition(movements)
+    const patrimony = await this.createPatrimony(assets.map(el => ({cod: el.cod, qtd: el.quantity})))
+    const alocations = this.getAlocations(assets)
 
-    return {resume, alocations, distribuition}
-  }
-
-//TODO REVER COMO SE CALCULA O RENDIMENTO
-  private async resume(array: any){
-    const total = await this.sumValues(array)
-
-    const groupArrays = await this.arrayGroup(array)
-    const groupArraysDividends = this.arrayGroup(array, 3)
-    const lastAport = groupArrays.reduce((acc: any, {total}: any) => acc + total, 0)
-    const lastDividends = (groupArraysDividends.length ? groupArraysDividends : []).reduce((acc: any, {total}: any) => acc + total, 0) || 0
-
-    const patrimony = await this.getPatrimony(array)
-
-    const oldestDate = array
-  .map(item => {
-    const [month, year] = item.date_operation.split('/').map(Number);
-    return new Date(year, month - 1);
-  })
-  .reduce((min, curr) => curr < min ? curr : min);
-
-    const oldestYear = oldestDate.getFullYear();
+    const distribuition = assets.map((el) => ({
+      title: el.cod,
+      qtd: el.quantity,
+      hex: this.hexGenerator()
+    }))
 
     return {
-      total: total,
-      last: lastAport,
-      last_dividend: lastDividends,
-      startYear: oldestYear,
-      patrimony
+      resume: {
+        total,
+        last: last[0].total,
+        last_dividend: last_dividend[0].total,
+        startYear: +startYear,
+        patrimony
+      },
+      alocations,
+      distribuition
     }
   }
 
-  private async distribuition(array: any){
-    let result: any = []
-    const res: any = await this.removeDupliWithSum(array);
-    res.forEach((el: any) =>{
-      if(el.type !== 'Renda Fixa'){
-        result.push({
-          title: el.type === 'FIIs' || el.type === 'Ações' ? el.cod : el.type,
-          qtd: el.qtd,
-          hex: this.hexGenerator()
-        })
+  private lastByMonth(content, type_operation: 1 | 3){
+    const purchase = content.filter(m => m.type_operation === type_operation);
+
+    // Agrupa pelo mês/ano (MM/YYYY)
+    const grouped = groupBy(purchase, m => {
+      const [_, month, year] = m.date_operation.split('/');
+      return `${month}/${year}`; // chave: "MM/YYYY"
+    });
+
+    const totalsByMonth = Object.entries(grouped).map(([monthYear, items]) => {
+      const total = sumBy(items, i => parseFloat(i.total));
+      return {
+        monthYear,
+        total
+      };
+    });
+
+    return totalsByMonth
+  }
+
+  private async createPatrimony(tickers: {cod: string, qtd: number}[]){
+    const query = tickers.map((el: any) => el.cod).join('-')
+    const tickerPricing = await this.ticker.accioTickerDataRequest(query)
+
+    let totalPatrimony = 0;
+
+    tickers.forEach(tickerItem => {
+      // Encontra o preço atual correspondente
+      const pricing = tickerPricing.find(p => p.ticker === tickerItem.cod);
+      if (pricing) {
+        totalPatrimony += pricing.curPrc * tickerItem.qtd;
       }
-    })
-    return result;
+    });
+    return totalPatrimony
   }
 
-  private sumValues(array: any, type: number = 1, key: string = 'total') {
-    return array.reduce((acc: any, el: any) => {
-      if(el.type_operation == type){
-        return acc + el[key]
-      }
-      return acc
-    }, 0)
-  }
-  private arrayGroup(array: any, type: number = 1, key: string = 'date_operation') {
-    const onlyPurchase = array.filter((arr: any) => arr.type_operation === type) || []
-    const groups = onlyPurchase.reduce((acc: any, el: any) => {
-      (acc[el[key]] = acc[el[key]] || []).push(el);
-      return acc;
-    }, {})
+  private getAlocations(assets: any[]){
+    const grouped = groupBy(assets, "type");
 
-    if(Object.keys(groups).length){
-      const groupsOrder = Object.keys(groups).reduce((a, b) => {
-        return new Date(b) > new Date(a) ? b : a;
-      });
-
-      return groups[groupsOrder]
-    }
-
-  return {}
-  }
-
-  private removeDupliWithSum(array, operation: number = 1, key: string = 'cod', key_sum: string = 'qtd'){
-    let result: any = [];
-    array.reduce(function(res: any, value: any) {
-      if(value.type_operation === operation){
-        if (!res[value[key]]) {
-          res[value[key]] = { [key]: value[key], [key_sum]: 0, total: 0, hex: '' };
-          result.push(res[value[key]])
-        }
-        res[value[key]][key_sum] += value[key_sum];
-        res[value[key]]['total'] += value.total;
-        res[value[key]]['hex'] = value.hex;
-        res[value[key]]['type'] = value.type;
-      }
-      return res;
-    }, {});
-
-    return result;
-  }
-
-
-  private async getPatrimony(array: any) {
-
-    const realValue: number[] = []
-    const result: any = await this.removeDupliWithSum(array);
-    // const totalOfAssets = await this.sumValues(array, 1, 'qtd')
-    // const assets = array.map((el: any) => {if(el.type_operation == 1) return el.qtd})
-    // const symbols = cods.reduce((acc: any, r: any) => {if(acc.indexOf(r)<0)acc.push(r);return acc;},[])
-
-    const symbols = result.map((el: any) => el.cod)
-    const valuesReq = await this.b3Rquest(symbols.join('|'))
-
-
-    const pricing = valuesReq.map((req: any) => req.scty?.SctyQtn.curPrc)
-    // return valuesReq.map((req: any) => {
-    //   return {
-    //     value: req.scty?.SctyQtn.curPrc,
-    //     simbol: req.scty?.symb
-    //   }
-    // })
-
-    result.forEach((res: any, i: number) =>{
-      realValue.push(Number(pricing[i] * res.qtd) || res.total)
-    })
-
-    return realValue.reduce((acc: number, val: number) => acc + val, 0)
+    // Calcula a soma do total em cada grupo
+    return map(grouped, (items) => ({
+      type: items[0].assetsType.title,
+      qtd: sumBy(items, (item) => item.quantity),
+      total: sumBy(items, (item) => parseFloat(item.total)),
+      hex: this.hexGenerator()
+    }));
   }
 
   public async AportsGraph(ctx: HttpContextContract) {
@@ -235,6 +181,7 @@ public async getCDIComparation(ctx: HttpContextContract) {
 private async myResturnAsset(year: any) {
   const investmetControl = new InvestmentsWalletsController()
   const myReturns: any = await investmetControl.patrimonyGainList('desc')
+  return myReturns
   const returnByYear = myReturns.filter((item) => Number(`20${item.month.split('/')[1]}`) == year)
   const newValue = [...Array(12)].map((_, i: number) =>{
     const val = {

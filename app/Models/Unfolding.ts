@@ -4,6 +4,8 @@ import Operation from './Operation'
 import Month from './Month'
 import Type from './Type'
 import Change from './Change'
+import User from './User'
+import Asset from './Asset'
 
 export default class Unfolding extends BaseModel {
   @column({ isPrimary: true })
@@ -16,9 +18,6 @@ export default class Unfolding extends BaseModel {
   public date_operation: string
 
   @column()
-  public type: number
-
-  @column()
   public from: number
 
   @column()
@@ -28,13 +27,10 @@ export default class Unfolding extends BaseModel {
   public factor: number
 
   @column()
-  public type_operation: number
-
-  @column()
   public obs: string
 
   @column()
-  public month_ref: number
+  public user_id: number
 
   @column()
   public total: number
@@ -47,6 +43,18 @@ export default class Unfolding extends BaseModel {
 
   @column.dateTime({ autoCreate: true, autoUpdate: true })
   public updated_at: DateTime
+
+  @hasOne(() => User, {
+    localKey: 'user_id',
+    foreignKey: 'id',
+  })
+  public user: HasOne<typeof User>
+
+  @hasOne(() => Asset, {
+    localKey: 'cod',
+    foreignKey: 'cod',
+  })
+  public assets: HasOne<typeof Asset>
 
   @hasOne(() => Type, {
     localKey: 'type',

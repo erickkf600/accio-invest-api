@@ -1,7 +1,13 @@
 import Movement from 'App/Models/Movement'
 import { HttpContextContract } from '@ioc:Adonis/Core/HttpContext'
+import Asset from 'App/Models/Asset';
+import { chain, flatMap, groupBy, map, round, sumBy } from 'lodash';
+import Unfolding from 'App/Models/Unfolding';
+import moment from 'moment'
+import TickerRequests from 'App/services/ticker-requests.service';
 
 export default class InvestmentsMovementsController {
+  private ticker = new TickerRequests()
   public async show(ctx: HttpContextContract) {
     const page: number = ctx.params.page;
     const limit: number = ctx.params.limit;
@@ -42,7 +48,6 @@ export default class InvestmentsMovementsController {
 
     return response
   }
-//TODO API CDI https://api.bcb.gov.br/dados/serie/bcdata.sgs.4391/dados?formato=json
 //DIARIO https://api.bcb.gov.br/dados/serie/bcdata.sgs.12/dados?formato=json&dataInicial=01/01/2023&dataFinal=31/12/2023
   public async showByYear(ctx: HttpContextContract) {
     const year: number = ctx.params.year;
@@ -118,154 +123,228 @@ export default class InvestmentsMovementsController {
   }
 
   public async register(ctx: HttpContextContract) {
+
     const body: any = ctx.request.body()
-
-    for await (const iterator of body) {
-      if(iterator.type_operation !== 2) {
-        try {
-          await Movement.createMany(body)
-          return true
-         } catch (error) {
-          console.log(error)
-          throw {
-            code: 4,
-            message: "Ocorreu um erro ao cadastrar",
-            error
-          };
-         }
-      }else {
-       return await this.sellItem(iterator)
-      }
-    }
-    return true
-  }
-
-  public async registerSplit(ctx: HttpContextContract) {
-    const body: any = ctx.request.body()
-    const movement = Movement
-          .query()
-          .where('cod', body.cod)
-          .andWhere('type_operation', 1)
-
-      const foundedItem = await movement
-
-      const savePromises = foundedItem.map((el) => {
-        if(body.factor === 1) {
-          el.unity_value = +el.unity_value / body.to
-          el.qtd = +el.qtd * body.to
-          el.save();
-          return true
-        }else{
-          return false
-        }
-      });
-      await Promise.all(savePromises);
-      if(savePromises) {
-        const [_, monthRef, year] = body.date_operation.split('/')
-        const savePayload = {
-          cod: body.cod,
-          date_operation: body.date_operation,
-          qtd: 1,
-          type: body.type,
-          type_operation: body.operation_type,
-          unity_value: 0,
-          fee: 0,
-          obs: body.obs,
-          total: 0,
-          year: +year,
-          month_ref: +monthRef
-        }
-        await Movement.create(savePayload);
-        return savePayload
-      }
-
-  }
+    const items = Array.isArray(body) ? body : [body] // normaliza para array
+    const userId = 1 // TODO: capturar userid do token jwt
 
 
-  private async sellItem(item: any) {
-    const moviment = Movement
-    .query()
-    .where('cod', item.cod)
-    .andWhereNot('type_operation', 2)
+    const toCreate: any[] = []
+    const toUpdate: any[] = []
+    const movements: any[] = []
+    const unfoldings: any[] = []
 
-    const foundedItem = await moviment
 
-    foundedItem.sort((a, b) => (b.qtd > a.qtd ? -1 : 1))
-    if(foundedItem.length){
-      const qtd = foundedItem.reduce((acc, {qtd}) => acc + qtd, 0)
-      await this.registerSell(item)
-      if(item.qtd >= qtd) {
-        await  moviment.delete()
-      }else{
-        foundedItem.map((asset: any) =>{
-          if (item.qtd > 0) {
-            const quantityToUpdate = Math.min(item.qtd, asset.qtd);
-            item.qtd -= quantityToUpdate;
-            asset.qtd -= quantityToUpdate;
-            asset.total = asset.unity_value * asset.qtd;
-            return asset
-          }
-        })
-        try {
-          await this.deleteZero(foundedItem.filter(del => !del.qtd))
-          await this.updateWithNewValue(foundedItem.filter(el => !!el.qtd))
+    // === Preparar dividendos para rentability ===
+    const rentabilityPayload: any[] = []
 
-          return true
-        } catch (error) {
-          throw {
-            code: 4,
-            message: "Falha na execução de updade ou delete",
-          };
-        }
-      }
-    }else {
-      throw {
-        code: 4,
-        message: `${item.cod} não encontrado na base`,
-      };
-    }
-  }
+    let isSell = false
 
-  private async deleteZero(array: any[]){
-    if(array.length) {
-      const ids = array.map((item) => item.id)
-      await Movement
-          .query()
-          .whereIn('id', ids)
-          .andWhere('type_operation', 1)
-          .delete()
-    }
-    return array
-  }
-
-  private async updateWithNewValue(array: any[]) {
-    if(array.length) {
-      const ids = array.map((item) => item.id)
-      const movementsToUpdate = await Movement
-      .query()
-      .whereIn('id', ids)
-      array.forEach((el, i) => {
-        movementsToUpdate[i].qtd = el.qtd;
-        movementsToUpdate[i].total = el.total;
-      });
-      const savePromises = movementsToUpdate.map((movement) => movement.save());
-      await Promise.all(savePromises);
-      return movementsToUpdate
-    }
-  }
-
-  private async registerSell(data: any) {
     try {
-      await Movement.create(data)
-      return true
-     } catch (error) {
+      // === Separar ações por tipo e preparar dados ===
+      for (const iterator of items) {
+        if (iterator.type_operation === 1) {
+          // Compra
+          const hasAsset = await Asset.findBy("cod", iterator.cod)
+          if (!hasAsset) {
+            toCreate.push({
+              cod: iterator.cod,
+              quantity: iterator.qtd,
+              total: iterator.total,
+              total_rendi: 0,
+              type: iterator.type,
+              total_fee: iterator.fee
+            })
+          } else {
+            toUpdate.push({
+              cod: iterator.cod,
+              quantity: iterator.qtd,
+              total: iterator.total,
+              total_fee: iterator.fee
+            })
+          }
+        } else if (iterator.type_operation === 2) {
+          // Venda
+          isSell = true
+          toUpdate.push({
+            cod: iterator.cod,
+            quantity: -iterator.qtd, // subtrai
+            total: -iterator.total,
+            total_fee: iterator.fee
+          })
+        } else if (iterator.type_operation === 3) {
+          // Dividendos
+          toUpdate.push({
+            cod: iterator.cod,
+            total_rendi: iterator.total,
+          })
+          // cria o payload para busca de proventos
+          rentabilityPayload.push({
+            dataInicio: moment(iterator.date_operation, "DD/MM/YYYY").format("YYYY-MM-DD"),
+            dataFim: moment(iterator.date_operation, "DD/MM/YYYY").format("YYYY-MM-DD"),
+            papeis_tipos: [
+              {
+                papel: iterator.cod,
+                tipo: iterator.type
+              }
+            ]
+          })
+        } else if (iterator.type_operation === 4) {
+          // Desdobramento / Grupamento
+          unfoldings.push({
+            cod: iterator.cod,
+            date_operation: iterator.date_operation,
+            from: iterator.from,
+            to: iterator.to,
+            factor: iterator.factor,
+            obs: iterator.obs,
+            user_id: userId,
+            total: iterator.total || 0,
+            year: new Date(iterator.date_operation).getFullYear(),
+          })
+
+          const asset = await Asset.findBy("cod", iterator.cod)
+          if (asset) {
+            let ratio = 1
+
+            if (iterator.factor === 1) {
+              // Desdobramento
+              ratio = Number(iterator.to) / Number(iterator.from)
+            } else if (iterator.factor === 2) {
+              // Grupamento
+              ratio = Number(iterator.to) / Number(iterator.from)
+            }
+
+            if (ratio !== 1) {
+              asset.quantity = Number(asset.quantity) * ratio
+              await asset.save()
+            }
+          }
+        }
+
+        // Movements sempre
+        movements.push({
+          cod: iterator.cod,
+          date_operation: iterator.date_operation,
+          qtd: iterator.qtd,
+          type: iterator.type,
+          type_operation: iterator.type_operation,
+          unity_value: iterator.unity_value,
+          obs: iterator.obs,
+          fee: iterator.fee,
+          total: iterator.total,
+          user_id: userId,
+          month_ref: +iterator.date_operation.split('/')[1],
+          year: +iterator.date_operation.split('/')[2]
+
+        })
+      }
+
+      // === CREATE Assets ===
+      const groupedCreate = groupBy(toCreate, "cod")
+      const createData: any = map(groupedCreate, (items: any, cod) => {
+        const quantity = sumBy(items, "quantity")
+        const total = sumBy(items, "total")
+        const total_fee = sumBy(items, "total_fee")
+        return {
+          cod,
+          quantity: quantity,
+          total: total,
+          total_fee: total_fee,
+          total_rendi: 0,
+          type: items[0].type,
+          medium_price: quantity > 0 ? round((total - total_fee) / quantity, 3) : 0,
+        }
+      })
+      if (createData.length > 0) {
+        await Asset.createMany(createData)
+      }
+
+      // === UPDATE Assets ===
+      const groupedUpdate = groupBy(toUpdate, "cod")
+      const updates = Object.entries(groupedUpdate).map(async ([cod, items]) => {
+        const asset = await Asset.findByOrFail("cod", cod)
+        const qtdDelta = sumBy(items, (i: any) => i.quantity ?? 0)
+        const totalDelta = sumBy(items, (i: any) => i.total ?? 0)
+        const rendiDelta = sumBy(items, (i: any) => i.total_rendi ?? 0)
+        const feeDelta = sumBy(items, (i: any) => i.total_fee ?? 0)
+
+        asset.quantity = Number(asset.quantity ?? 0) + qtdDelta
+        asset.total = Number(asset.total ?? 0) + totalDelta
+        asset.total_rendi = Number(asset.total_rendi ?? 0) + rendiDelta
+        asset.total_fee = Number(asset.total_fee ?? 0) + feeDelta
+
+        if (qtdDelta > 0 || isSell) {
+          asset.medium_price = asset.quantity > 0
+            ? round((asset.total - asset.total_fee) / asset.quantity, 3)
+            : 0
+          isSell = false
+        }
+        return asset.save()
+      })
+      await Promise.all(updates)
+
+      // === CREATE Unfoldings ===
+      if (unfoldings.length > 0) {
+        await Unfolding.createMany(unfoldings)
+      }
+
+      // === CREATE Movements ===
+      if (movements.length > 0) {
+        let withRent = movements
+        if(rentabilityPayload.length) {
+          const payloadGrouped = chain(rentabilityPayload)
+          .groupBy(item => `${item.dataInicio}_${item.dataFim}`)
+          .map((grupo) => ({
+              dataInicio: grupo[0].dataInicio,
+              dataFim: grupo[0].dataFim,
+              papeis_tipos: flatMap(grupo, 'papeis_tipos')
+          }))
+          .value();
+          const resultados = await Promise.all(
+            payloadGrouped.map(item => (
+              this.ticker.accioTickerEarningsRequest(item).catch(e => {
+                console.error(`Erro no item ${item.dataInicio}`, e);
+                throw {
+                  code: 4,
+                  message:  `Ocorreu um erro ao buscar os dados de proventos`,
+                };
+              })
+            ))
+          )
+          withRent = movements.map(movement => {
+            const resultado = resultados.flat().find(r => r.ticker === movement.cod);
+            if (resultado && resultado.proventos.length > 0) {
+              return {
+                ...movement,
+                rentability: resultado.proventos[0].percent
+              };
+            }
+            return movement;
+          });
+        }
+        if(items[0].type_operation === 4) {
+          const asset = await Asset.findBy("cod", withRent[0].cod)
+          withRent[0].qtd = asset?.quantity
+        }
+        await Movement.createMany(withRent)
+      }
+
+    } catch (error) {
+      console.error(error)
       throw {
         code: 4,
-        message: "Ocorreu um erro ao cadastrar",
+        message:  `Ocorreu um erro ao cadastrar ${error}`,
       };
-     }
+    }
+
+
+    return { success: true }
   }
 
+
+
+  // TODO REVER COMO VAI SER O UPDATE
   public async update(ctx: HttpContextContract) {
     const id: number = ctx.params.id;
     const body: any = ctx.request.body()[0]
@@ -289,10 +368,13 @@ export default class InvestmentsMovementsController {
     await movement.save()
     return movement;
   }
-
+  // TODO REVER COMO VAI SER O DELETE
   public async deleteMov(ctx: HttpContextContract) {
     const id: number = ctx.params.id;
     const movement: any = await Movement.findOrFail(id)
+    // const asset: any = await Asset.findBy("cod", movement.cod)
+    // asset.quantity = movement
+    // asset.total = 0
     await movement.delete()
     return true
   }
