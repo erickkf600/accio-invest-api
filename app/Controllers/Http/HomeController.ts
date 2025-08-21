@@ -34,9 +34,26 @@ public async cdiRequest(year: any){
 }
 
   public async showHome(_ctx: HttpContextContract) {
+    const userId = 1
     const assets: any = await Asset.query()
+    .where('user_id', userId)
+    .andWhere('quantity', '>', 0)
     .select('id', 'total', 'cod', 'quantity', 'total_rendi', 'type')
     .preload('assetsType')
+
+    if(!assets.length) {
+      return {
+        "resume": {
+            "total": 0,
+            "last": 0,
+            "last_dividend": 0,
+            "startYear": 0,
+            "patrimony": 0
+        },
+        "alocations": [],
+        "distribuition": []
+      }
+    }
 
     let movements: any = await Movement.query()
     .select('id', 'total', 'fee', 'month_ref', 'unity_value', 'cod', 'date_operation', 'qtd', 'type_operation', 'type', 'year')
@@ -180,20 +197,20 @@ public async getCDIComparation(ctx: HttpContextContract) {
 
 private async myResturnAsset(year: any) {
   const investmetControl = new InvestmentsWalletsController()
-  const myReturns: any = await investmetControl.patrimonyGainList('desc')
-  return myReturns
+  const myReturns: any = await investmetControl.patrimonyGainList()
   const returnByYear = myReturns.filter((item) => Number(`20${item.month.split('/')[1]}`) == year)
   const newValue = [...Array(12)].map((_, i: number) =>{
+    const mes = String(i + 1).padStart(2, '0');
     const val = {
-      data: `${i + 1}/${year.slice(2)}`,
-      valor: null,
+      data: `${mes}/${year.slice(2)}`,
+      preco_compra: null,
+      preco_medio: null
     }
     const founded = returnByYear.find(e =>  e.month == val.data)
     if(founded) {
-      val.valor = +founded?.rent.replace('%', '') as any
+      val.preco_compra = +founded?.rentability.replace('%', '') as any || null
+      val.preco_medio = +founded?.rentability_medium_price.replace('%', '') as any || null
     }
-
-    val.data =  val.data.padStart(2, '0')
     return val
   })
 

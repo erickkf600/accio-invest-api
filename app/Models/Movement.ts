@@ -1,10 +1,11 @@
-import { BaseModel, column, HasOne, hasOne } from '@ioc:Adonis/Lucid/Orm'
+import { BaseModel, BelongsTo, belongsTo, column, HasOne, hasOne } from '@ioc:Adonis/Lucid/Orm'
 import { DateTime } from 'luxon'
 import Month from './Month'
 import Operation from './Operation'
 import Type from './Type'
 import User from './User'
 import Asset from './Asset'
+import Unfolding from './Unfolding'
 
 export default class Movement extends BaseModel {
   @column({ isPrimary: true })
@@ -53,6 +54,9 @@ export default class Movement extends BaseModel {
   @column()
   public year: number
 
+  @column()
+  public unfold_id: number
+
   // @column.dateTime({
   //   autoCreate: true,
   //   serialize: (value: DateTime | null) => {
@@ -95,4 +99,9 @@ export default class Movement extends BaseModel {
   })
   public month: HasOne<typeof Month>
 
+  @belongsTo(() => Unfolding, {
+    localKey: 'id',
+    foreignKey: 'unfold_id'
+  })
+  public unfoldOperation: BelongsTo<typeof Unfolding>
 }

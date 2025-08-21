@@ -6,7 +6,7 @@ export default class Unfoldings extends BaseSchema {
   public async up () {
     this.schema.createTable(this.tableName, (table) => {
       table.increments('id').primary()
-      table.string("cod", 20).references('assets.cod').notNullable().references('cod').inTable('assets')
+      table.string("cod", 20)
       table.string("date_operation", 11).notNullable()
       table.integer("from", 20).notNullable()
       table.integer("to", 5).notNullable()

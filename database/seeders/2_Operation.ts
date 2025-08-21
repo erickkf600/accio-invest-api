@@ -7,6 +7,7 @@ export default class OperationSeeder extends BaseSeeder {
       { title: 'Venda', full_title: 'Venda de ativo' },
       { title: 'Dividendos', full_title: 'Recebimento de dividendos' },
       { title: 'Desdobramentos', full_title: 'Realizar operação de desdobramento' },
+      { title: 'Aluguel', full_title: 'Rendimento de Aluguel de ações' },
     ])
   }
 }

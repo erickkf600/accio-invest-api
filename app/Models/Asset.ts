@@ -1,6 +1,7 @@
 import { BaseModel, HasOne, column, hasOne } from '@ioc:Adonis/Lucid/Orm'
 import { DateTime } from 'luxon'
 import Type from './Type'
+import User from './User'
 
 export default class Asset extends BaseModel {
   @column({ isPrimary: true })
@@ -25,6 +26,9 @@ export default class Asset extends BaseModel {
   public total_fee: number
 
   @column()
+  public user_id: number
+
+  @column()
   public total: number
 
   @column.dateTime({ autoCreate: true, autoUpdate: true })
@@ -38,5 +42,11 @@ export default class Asset extends BaseModel {
     foreignKey: 'id',
   })
   public assetsType: HasOne<typeof Type>
+
+  @hasOne(() => User, {
+    localKey: 'user_id',
+    foreignKey: 'id',
+  })
+  public user: HasOne<typeof User>
 
 }

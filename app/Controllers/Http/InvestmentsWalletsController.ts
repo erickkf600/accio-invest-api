@@ -5,7 +5,7 @@ import Asset from 'App/Models/Asset';
 import Movement from 'App/Models/Movement';
 import AccumulativeCalc from 'App/services/accumulative-calc';
 import axios from 'axios';
-import { groupBy, keyBy, map } from 'lodash';
+import { groupBy, keyBy, map, orderBy, uniqBy } from 'lodash';
 
 export default class InvestmentsWalletsController {
   private accumulationCacl = new AccumulativeCalc()
@@ -116,9 +116,9 @@ export default class InvestmentsWalletsController {
   }
 
 
-  public async patrimonyGainList(order: string = 'asc', query?: any) {
+  public async patrimonyGainList(order: 'asc' | 'desc' = 'asc') {
     const movements = await Movement.query()
-    .select('cod', 'month_ref', 'year', 'type_operation', 'total', 'rentability', 'qtd')
+    .select('cod', 'month_ref', 'year', 'type_operation', 'total', 'rentability', 'qtd', 'fee')
     .orderBy('year', 'asc')
     .orderBy('month_ref', 'asc')
     .whereIn('type_operation', [1,3])
@@ -128,36 +128,29 @@ export default class InvestmentsWalletsController {
     const resultGrouped = map(grouped, (items, key) => {
       const [month_ref, year, type_operation] = key.split("-").map(Number);
       const total = items.reduce((sum, i: any) => sum + parseFloat(i.total), 0);
-
-      const tickersGrouped = map(groupBy(items, "cod"), (_, cod) => {
-        return cod;
-      });
-
       return {
         month_ref,
         year,
         type_operation,
         total: total.toFixed(2),
-        tickers: tickersGrouped
+        qtd: items.reduce((acc, i) => acc + Number(i.qtd), 0),
+        fee: items.reduce((acc, i) => acc + Number(i.fee), 0)
       };
     });
     const purchase = resultGrouped.filter((p) => p.type_operation === 1)
-    // todo capturar o preço medio do Asset e criar um preco_medio_total que vai ser a soma de todos os preços medios
-    const tickers = purchase.map((el) => el.tickers)
-    // const mediumPriceList = tickers.map(async (cod) => {
-    //   const asset = await Asset.findByOrFail("cod", cod)
-    //   return asset
-    // })
-    // return await Promise.all(mediumPriceList)
-    return purchase
+
     const dividends = resultGrouped.filter((p) => p.type_operation === 3)
 
     const accumulated = await this.accumulationCacl.someTotais(purchase.map(el => el.total))
+    const accumulatedQtd = await this.accumulationCacl.someTotais(purchase.map(el => el.qtd))
+    const accumulatedFee = await this.accumulationCacl.someTotais(purchase.map(el => el.fee))
     const aportsIncrement = purchase.map(({year, month_ref}: any, i: number) => {
       return {
         year,
         month_ref,
-        total: accumulated[i]
+        total: accumulated[i],
+        qtd: +accumulatedQtd[i],
+        fee: +accumulatedFee[i]
       }
     });
 
@@ -170,16 +163,27 @@ export default class InvestmentsWalletsController {
       const key = `${a.year}-${a.month_ref}`;
       const dividendTotal = dividendMap[key] ? parseFloat(dividendMap[key].total) : 0;
       const aportTotal = parseFloat(a.total);
+      const totalNoFee = aportTotal - a.fee
       const rentability = aportTotal > 0 ? (dividendTotal / aportTotal) * 100 : 0;
-
+      const mediumPrice = a.qtd > 0 ? totalNoFee / a.qtd: 0;
+      const rentabilityMedium = mediumPrice > 0 ? (dividendTotal / (mediumPrice * a.qtd)) * 100 : 0;
+      const month = `${String(a.month_ref).padStart(2, "0")}/${String(a.year).slice(-2)}`;
       return {
-        ...a,
+        qtd: a.qtd,
+        fee: a.fee,
+        month,
         dividend_total: dividendTotal.toFixed(2),
-        rentability: rentability.toFixed(2) + "%"
+        total: a.total,
+        total_medium_price: mediumPrice.toFixed(2),
+        rentability: rentability.toFixed(3) + "%",
+        rentability_medium_price: rentabilityMedium.toFixed(3) + "%",
       };
     });
 
-    return result
+    return  orderBy(result, r => {
+      const [m, y] = r.month.split("/");   // ex: "09/22" => ["09","22"]
+      return y + m;                        // "22" + "09" = "2209"
+    }, [order]);
 
 
 
