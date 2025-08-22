@@ -132,6 +132,7 @@ export default class InvestmentsMovementsController {
 
   }
 
+  // todo falar pro gpt criar uma versao mais enxuta e tipada do crete update e delete????
   public async register(ctx: HttpContextContract) {
     const body: any = ctx.request.body()
     const items = Array.isArray(body) ? body : [body] // normaliza para array
@@ -343,7 +344,6 @@ export default class InvestmentsMovementsController {
     return { success: true }
   }
 
-
   public async update(ctx: HttpContextContract) {
     const id: number = ctx.params.id;
     const body: any = ctx.request.body()[0];
@@ -512,7 +512,7 @@ export default class InvestmentsMovementsController {
   await movement.delete();
 
   return { success: true };
-}
+  }
 
 
   public async showFilteredItemsByType(ctx: HttpContextContract) {

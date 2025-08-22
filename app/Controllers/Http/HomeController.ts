@@ -185,7 +185,7 @@ public async cdiRequest(year: any){
   return `#${r}${g}${b}`;
     // const grayValue = Math.floor(Math.random() * 256).toString(16).padStart(2, '0');
     // return `#${grayValue}${grayValue}${grayValue}`;
-}
+  }
 
 public async getCDIComparation(ctx: HttpContextContract) {
 

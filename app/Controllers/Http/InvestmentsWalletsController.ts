@@ -4,10 +4,12 @@ import Database from '@ioc:Adonis/Lucid/Database';
 import Asset from 'App/Models/Asset';
 import Movement from 'App/Models/Movement';
 import AccumulativeCalc from 'App/services/accumulative-calc';
+import TickerRequests from 'App/services/ticker-requests.service';
 import axios from 'axios';
-import { groupBy, keyBy, map, orderBy, uniqBy } from 'lodash';
+import { groupBy, keyBy, map, orderBy, sumBy, uniqBy } from 'lodash';
 
 export default class InvestmentsWalletsController {
+  private ticker = new TickerRequests()
   private accumulationCacl = new AccumulativeCalc()
   private async accioTickerEarningsRequest(body: any){
     const req = await axios.post(`${Env.get('TICKER_HOST')}/proventos`, body)
@@ -51,51 +53,244 @@ export default class InvestmentsWalletsController {
 
     return req
 }
-  public async assetsList() {
-    const movements: any = await Movement.query()
-    .select('id', 'cod', 'type', 'qtd', 'total')
-    .groupBy('cod')
-    .select(Database.raw('round(sum(total), 2) as total'))
-    .where('type_operation', 1)
-    .select(Database.raw('round(sum(qtd), 2) as qtd'))
+
+public async resume(){
+  const userId = 1
+    const assets: any = await Asset.query()
+    .where('user_id', userId)
+    .andWhere('quantity', '>', 0)
+    .select('cod', 'quantity', 'total_rendi', 'medium_price', 'type', 'total', 'total_fee')
     .preload('assetsType')
 
+    if(!assets.length) return []
+
+    const patrimony = await this.createPatrimony(assets.map(el => ({cod: el.cod, qtd: el.quantity})))
+
+    const totals = assets.reduce((acc, item) => {
+      acc.total_medium += parseFloat(item.medium_price) || 0;
+      acc.total_provents += parseFloat(item.total_rendi) || 0;
+      return acc;
+    }, { total_medium: 0, total_provents: 0 });
+
+
+  return {patrimony, ...totals}
+}
+
+  public async compositionList(){
+    const userId = 1
+    const assets: any = await Asset.query()
+    .where('user_id', userId)
+    .andWhere('quantity', '>', 0)
+    .select('cod', 'quantity', 'total_rendi', 'medium_price', 'type', 'total', 'total_fee')
+    .preload('assetsType')
+    if(!assets.length) return []
 
     const dividends: any = await Movement.query()
-    .groupBy('cod')
-    .select('total', 'cod', 'type_operation')
-    .select(Database.raw('round(sum(total), 2) as total'))
+    .select('id', 'cod', 'type', 'qtd', 'total', 'date_operation')
     .where('type_operation', 3)
+    .where('user_id', userId)
+    if(!assets.length) return []
 
-    if(movements.length){
-      const symbols = movements.map((el: any) => el.cod).join('|')
+    const grouped = groupBy(assets, 'type');
 
-      const req = await this.b3Rquest(symbols)
+  const now = new Date();
+  const lastYear = new Date();
+  lastYear.setFullYear(now.getFullYear() - 1);
+  const last30Days = new Date();
+  last30Days.setDate(now.getDate() - 30);
 
-      const response = movements.map((res: any) =>{
-        const b3 = req.find((ser: any) => ser.scty?.symb === res.cod)
-        return {
-          cod: res.cod,
-          asset_id: res.id,
-          qtd: res.qtd,
-          type: res.assetsType.title,
-          type_id: res.assetsType.id,
-          curr_price: b3?.scty?.SctyQtn.curPrc || '_._',
-          payed_dividend: dividends.find((dvd: any) => dvd.cod === res.cod)?.total || 0.0,
-          total: this.convertThousand(+res.total)
-        }
-      })
-      return response
-    }else{
-      return [];
-    }
+  let result = map(grouped, (items) => {
+    const qtd = sumBy(items, 'quantity');
+    const total = sumBy(items, (i) => parseFloat(i.total));
+    const total_rent = sumBy(items, (i) => parseFloat(i.total_rendi));
+
+    const codes = items.map(i => i.cod);
+    const dividendsGroup = dividends.filter(d => codes.includes(d.cod));
+
+    // Rendimento últimos 30 dias
+    const rentMonth = sumBy(dividendsGroup, (d: any) => {
+      const [day, month, year] = d.date_operation.split('/').map(Number);
+      const divDate = new Date(year, month - 1, day);
+      return divDate >= last30Days && divDate <= now ? parseFloat(d.total) : 0;
+    });
+
+    // Rendimento últimos 12 meses
+    const rentLast12 = sumBy(dividendsGroup, (d: any) => {
+      const [day, month, year] = d.date_operation.split('/').map(Number);
+      const divDate = new Date(year, month - 1, day);
+      return divDate >= lastYear && divDate <= now ? parseFloat(d.total) : 0;
+    });
+
+    return {
+      type: items[0].assetsType.title,
+      qtd,
+      total,
+      current_value: total, // valor atual placeholder
+      percent_wallet: '0%', // será calculado depois
+      total_rent: total > 0 ? `${((total_rent / total) * 100).toFixed(2)}%` : '0%',
+      rent_last_12: total > 0 ? `${((rentLast12 / total) * 100).toFixed(2)}%` : '0%',
+      rent_month: total > 0 ? `${((rentMonth / total) * 100).toFixed(2)}%` : '0%',
+      hex: this.hexGenerator()
+    };
+  });
+
+  const totalPatrimony = sumBy(result, 'total');
+  result = result.map(item => ({
+    ...item,
+    percent_wallet: totalPatrimony > 0 ? `${((item.total / totalPatrimony) * 100).toFixed(0)}%` : '0%'
+  }));
+
+  return result;
   }
+  public async assetsList() {
+    const userId = 1;
+    const assets: any = await Asset.query()
+  .where('user_id', userId)
+  .andWhere('quantity', '>', 0)
+  .select('id', 'cod', 'quantity', 'total_rendi', 'medium_price', 'type', 'total', 'total_fee')
+  .preload('assetsType');
+  if(!assets.length) return []
+
+  const dividends: any = await Movement.query()
+  .select('id', 'cod', 'type', 'qtd', 'total', 'date_operation')
+  .where('type_operation', 3)
+  .where('user_id', userId);
+
+  const query = assets.map((el: any) => el.cod).join('-')
+  const tickerPricing = await this.ticker.accioTickerDataRequest(query)
+
+  // datas de corte
+  const now = new Date();
+  const lastYear = new Date();
+  lastYear.setFullYear(now.getFullYear() - 1);
+  const last30Days = new Date();
+  last30Days.setDate(now.getDate() - 30);
 
 
+
+  const response = assets.map((asset: any) => {
+    const assetDividends = dividends.filter(d => d.cod === asset.cod);
+
+    // rendimento últimos 30 dias
+    const rentMonth = sumBy(assetDividends, (d: any) => {
+      const [day, month, year] = d.date_operation.split('/').map(Number);
+      const divDate = new Date(year, month - 1, day);
+      return divDate >= last30Days && divDate <= now ? parseFloat(d.total) : 0;
+    });
+
+    // rendimento últimos 12 meses
+    const rentLast12 = sumBy(assetDividends, (d: any) => {
+      const [day, month, year] = d.date_operation.split('/').map(Number);
+      const divDate = new Date(year, month - 1, day);
+      return divDate >= lastYear && divDate <= now ? parseFloat(d.total) : 0;
+    });
+
+    const b3 = tickerPricing.find((ser: any) => ser.ticker === asset.cod)
+
+    return {
+      cod: asset.cod,
+      asset_id: asset.id,
+      qtd: asset.quantity,
+      type: asset.assetsType.title,
+      type_id: asset.assetsType.id,
+      curr_price: b3.curPrc,
+      payed_dividend: asset.total_rendi,
+      total: +asset.total,
+      price_total: +asset.quantity * b3.curPrc,
+      patrimony: (+asset.quantity * b3.curPrc) + +asset.total_rendi,
+      medium_price: parseFloat(asset.medium_price).toFixed(3),
+      rent_last_12: asset.total > 0 ? `${((rentLast12 / asset.total) * 100).toFixed(2)}%` : '0%',
+      rent_month: asset.total > 0 ? `${((rentMonth / asset.total) * 100).toFixed(2)}%` : '0%',
+    };
+  });
+
+  return response;
+
+}
+
+
+  public async rentability(ctx: HttpContextContract){
+    const userId = 1
+    const year: number = ctx.params.year;
+    const assets: any = await Asset.query()
+    .where('user_id', userId)
+    .andWhere('quantity', '>', 0)
+    .select('cod', 'quantity', 'total_rendi', 'medium_price', 'type', 'total', 'total_fee', 'created_at')
+    .preload('assetsType')
+    if(!assets.length) return []
+
+    // todo dar um jeito de trazer a qtd que tenho na payment_date
+    // const movements = await Movement.query()
+    // .select('cod', 'month_ref', 'year', 'type_operation', 'total', 'rentability', 'qtd', 'fee')
+    // .orderBy('year', 'asc')
+    // .orderBy('month_ref', 'asc')
+    // .where('type_operation', 1)
+    // .andWhere('user_id', userId)
+
+    // const groupedMov = groupBy(movements, item => `${item.month_ref}-${item.year}-${item.type_operation}`);
+
+    // const resultGrouped = map(groupedMov, (items, key) => {
+    //   return {
+    //     qtd: items.reduce((acc, i) => acc + Number(i.qtd), 0)
+    //   };
+    // });
+    // return resultGrouped
+
+
+    const grouped = groupBy(assets, 'type');
+
+    const composition = map(grouped, (items) => ({
+      type: items[0].assetsType.title,
+      total: sumBy(items, (item) => parseFloat(item.total_rendi)),
+      hex: this.hexGenerator()
+    }))
+    const start = new Date(year, 0, 1).toISOString().split("T")[0];
+    const end = new Date(year, 11, 31).toISOString() .split("T")[0];
+
+    const payload = {
+      dataInicio: start,
+      dataFim: end,
+      papeis_tipos: assets.map((el: any) => ({papel: el.cod, tipo: el.type}))
+    }
+
+
+    const historyEarnings = await this.ticker.accioTickerEarningsRequest(payload)
+
+    const flattened = historyEarnings.flatMap(item =>
+      item.proventos.map(p => ({
+        payment_date: p.payment_date,
+        cod: item.ticker,
+        percent: p.percent,
+        value: p.value,
+        date_com: p.date_com,
+        month_ref:  +p.payment_date.split('/')[1],
+        year:  +p.payment_date.split('/')[2],
+      }))
+    );
+    const today = new Date();
+    const result: { payed: any[]; expected: any[] } = {
+      payed: [],
+      expected: []
+    };
+
+    flattened.forEach(item => {
+      const [day, month, year] = item.payment_date.split("/").map(Number);
+      const paymentDate =  new Date(year, month - 1, day);
+      if (paymentDate <= today) {
+          result.payed.push(item);
+      } else {
+          result.expected.push(item);
+      }
+  });
+
+    return {composition, ...result}
+  }
   public async dividendsList() {
+    const userId = 1
     const dividends: any = await Movement.query()
     .select('cod', 'date_operation', 'qtd', 'unity_value', 'total', 'type', 'year', 'month_ref')
     .where('type_operation', 3)
+    .andWhere('user_id', userId)
     .orderBy('year', 'desc')
     .orderBy('month_ref', 'desc')
     .preload('assetsType')
@@ -117,11 +312,13 @@ export default class InvestmentsWalletsController {
 
 
   public async patrimonyGainList(order: 'asc' | 'desc' = 'asc') {
+    const userId = 1
     const movements = await Movement.query()
     .select('cod', 'month_ref', 'year', 'type_operation', 'total', 'rentability', 'qtd', 'fee')
     .orderBy('year', 'asc')
     .orderBy('month_ref', 'asc')
     .whereIn('type_operation', [1,3])
+    .andWhere('user_id', userId)
 
     const grouped = groupBy(movements, item => `${item.month_ref}-${item.year}-${item.type_operation}`);
 
@@ -184,165 +381,66 @@ export default class InvestmentsWalletsController {
       const [m, y] = r.month.split("/");   // ex: "09/22" => ["09","22"]
       return y + m;                        // "22" + "09" = "2209"
     }, [order]);
-
-
-
-
-  //   let movements
-
-  //   if(!query) {
-      // movements = await Movement.query()
-      // .select('month_ref', 'year', 'type_operation', 'total')
-      // .select(Database.raw('round(sum(total), 2) as total'))
-      // .groupBy('month_ref', 'year', 'type_operation')
-      // .orderBy('year', 'asc')
-      // .orderBy('month_ref', 'asc')
-      // .whereIn('type_operation', [1,3])
-  //   }else{
-  //     movements = query
-  //   }
-
-  //   const dividends = movements.filter((el: any) => el.type_operation === 3)
-  //   const mov = movements.filter((el: any) => el.type_operation === 1)
-  //   let sum = 0
-    // const aportsIncremet = mov.map(({total, year, month_ref}: any) => {
-    //   sum = sum + Number(total)
-    //   return {
-    //     year,
-    //     month_ref,
-    //     total: sum
-    //   }
-    // });
-
-  //  let lastValidValue: any = null;
-
-  //   const response = dividends.map((el: any) =>{
-  //     const valIndex = aportsIncremet.findIndex((val: any) => val.month_ref === el.month_ref && val.year === el.year)
-  //     let aport = aportsIncremet[valIndex]?.total || 0
-
-  //     const dividend = el.total || 0
-  //     const lastAport = mov.find(v => v.month_ref === el.month_ref && v.year === el.year)?.total || 0
-  //     if (aport) {
-  //       lastValidValue = aport
-  //     } else aport = lastValidValue;
-
-  //     const finalValue = aport-lastAport
-  //     const rentability = parseFloat(Math.abs(dividend / finalValue * 100).toString()).toFixed(2)
-
-  //     return {
-  //       month: `${el.month_ref}/${el.year.toString().substr(-2)}`,
-  //       value: finalValue,
-  //       dividend: dividend,
-  //       rent: rentability+'%',
-  //     }
-  //   })
-  //   response.sort((a, b) => {
-  //     const [monthA, yearA] = a.month.split('/');
-  //     const [monthB, yearB] = b.month.split('/');
-  //     return order === 'asc' ? yearB - yearA || monthB - monthA : yearA - yearB || monthA - monthB;
-  // });
-
-  //   return response
   }
 
   public async VariationsList() {
-    const movements: any = await Movement.query()
-    .select('cod', 'type', 'unity_value', 'date_operation')
-    .select(Database.raw('ROUND(SUM(CASE WHEN type_operation = 1 THEN qtd ELSE 0 END), 2) as qtd'))
-    .select(Database.raw('ROUND(SUM(CASE WHEN type_operation = 1 THEN fee ELSE 0 END), 2) as fee'))
-    .select(Database.raw('ROUND(SUM(CASE WHEN type_operation = 1 THEN total ELSE 0 END), 2) as total'))
-    .select(Database.raw('ROUND(SUM(CASE WHEN type_operation = 3 THEN total ELSE 0 END), 2) as dividends'))
-    .whereIn('type_operation', [1, 3])
+    const userId = 1
+    const asset: any = await Asset.query()
+    .select('cod', 'quantity', 'total_rendi', 'medium_price', 'type', 'total', 'total_fee')
+    .where('quantity', '>', 0)
+    .andWhere('user_id', userId)
     .preload('assetsType')
-    .groupBy('cod');
 
-    if(movements.length){
-      const symbols = movements.map((el: any) => el.cod).join('-')
-      const request = await this.accioTickerRequest(symbols)
-      let response: any = []
-      movements.forEach((res: any, i: number) =>{
-        res.qtd = +res.qtd
-        res.total = +res.total
-        res.unity_value = +res.unity_value
-        res.fee = +res.fee
-        res.dividends = +res.dividends
+    const query = asset.map((el: any) => el.cod).join('-')
+    const tickerPricing = await this.ticker.accioTickerDataRequest(query)
 
-        const medium_price = (res.total - res.fee) / res.qtd
-        const currentTotal = (request?.[i]?.curPrc * res.qtd) + res.fee
-        const bal = currentTotal - res.total
-        const rel = Math.sign(bal) === 1 ? '+' : (Math.sign(bal) === 0 ? '' : '-')
-        const percent = parseFloat((((request?.[i]?.curPrc - medium_price) / medium_price) * 100).toFixed(2))+'%'
-        if(res.type == 1 || res.type == 2){
-          response.push({
-            cod: res.cod,
-            qtd: res.qtd,
-            type: res.assetsType.title,
-            curr_price: request?.[i]?.curPrc,
-            total_purch: +res.total,
-            current_total: parseFloat(currentTotal.toFixed(2)),
-            balance: parseFloat(bal.toFixed(2)),
-            percet:percent,
-            ralation: rel,
-            medium_price: parseFloat(medium_price.toFixed(2)),
-            dividends: res.dividends
-          })
-        }
-      })
+    const result = asset.map((el: any, i: number) => {
+      const curr_price = tickerPricing[i].curPrc || 0
+      const patrimony = curr_price * el.quantity
+      const medium = parseFloat(el.medium_price) || 0;
 
-     return response
-    }
+      let rent = 0;
+      let status = '-';
 
-    return []
+      if (curr_price > 0 && medium > 0) {
+        rent = ((curr_price - medium) / medium) * 100;
+        status = rent >= 0 ? '+' : '-';
+      }
+      if (curr_price === 0) {
+        rent = -100;
+        status = '-';
+      }
+      const rentability = Number(rent.toFixed(2))
+      return {
+        cod: el.cod,
+        qtd: el.quantity,
+        curr_price,
+        total_invest: +el.total,
+        current_patrimony: patrimony > 0 ? parseFloat(patrimony.toFixed(3) + +el.total_rendi) : +el.total,
+        total_patrimony: parseFloat(patrimony.toFixed(3)) || +el.total + +el.total_rendi,
+        medium_price: medium,
+        percent: `${rentability}%`,
+        ralation: status,
+        type: el.assetsType.title
 
-  //   const newValue: any = []
-  //   const lookupObject: any = {}
-  //   Object.keys(movements).forEach(key => {
-  //     lookupObject[movements[key]['cod']] = movements[key]
-  //  })
-
-  //  Object.keys(lookupObject).forEach((key: any) => {
-  //   newValue.push(lookupObject[key])
-  // })
-
-  //   if(newValue.length){
-  //     const symbols = newValue.map((el: any) => el.cod).join('-')
-
-  //     const request = await this.accioTickerRequest(symbols)
-  //     let response: any = []
-  //     newValue.forEach((res: any, i: number) =>{
-  //       const bal = request?.[i]?.curPrc * res.qtd - res.total
-  //       const rel = Math.sign(bal) === 1 ? '+' : (Math.sign(bal) === 0 ? '' : '-')
-  //       const percent = rel+parseFloat(Math.abs(bal / res.total * 100).toString()).toFixed(2)+'%'
-  //       if(res.type == 1 || res.type == 2){
-  //         response.push({
-  //           cod: res.cod,
-  //           qtd: res.qtd,
-  //           purchase_price: +res.unity_value,
-  //           type: res.assetsType.title,
-  //           curr_price: request?.[i]?.curPrc,
-  //           total_purch: +res.total,
-  //           current_total: request?.[i]?.curPrc * res.qtd,
-  //           balance: bal,
-  //           ralation: rel,
-  //           percet:percent
-  //         })
-  //       }
-  //     })
-  //     return response
-  //   }
-
-    return []
+      }
+    })
+    return result
   }
 
   public async DividendsGraph(ctx: HttpContextContract) {
+    const userId = 1
     const year: number = ctx.params.year;
     const dividendsCurrent: any = await Movement.query()
     .select('cod', 'date_operation', 'qtd', 'unity_value', 'type', 'year', 'month_ref', 'type_operation')
     .select(Database.raw('round(sum(total), 2) as total'))
     .where('type_operation', 3)
+    .andWhere('user_id', userId)
     .groupBy('year', 'month_ref')
     .preload('assetsType')
     .preload('month')
+
+    const startYear = Math.min(...dividendsCurrent.map(item => item.year));
 
     const lastYear = dividendsCurrent.filter((el) => el.year == +year-1)
     const currentYear = dividendsCurrent.filter((el) => el.year == year)
@@ -363,7 +461,7 @@ export default class InvestmentsWalletsController {
         ano: res.year
       }
     })
-    return [responseLastYear, responseCurrentYear]
+    return {startYear: startYear, content: [responseLastYear, responseCurrentYear]}
   }
 
   public convertThousand(num: any){
@@ -390,12 +488,13 @@ export default class InvestmentsWalletsController {
 
   public async earnings(ctx: HttpContextContract) {
     const body: any = ctx.request.body()
-
+    const userId = 1
     const movements: any = await Movement.query()
     .select('id', 'cod', 'type', 'qtd', 'total')
     .groupBy('cod')
     .select(Database.raw('round(sum(total), 2) as total'))
     .where('type_operation', 1)
+    .andWhere('user_id', userId)
     .select(Database.raw('round(sum(qtd), 2) as qtd'))
     if(movements.length) {
       const payload = Object.assign(body, {
@@ -430,4 +529,34 @@ export default class InvestmentsWalletsController {
     return []
 
   }
+
+  private async createPatrimony(tickers: {cod: string, qtd: number}[]){
+    const query = tickers.map((el: any) => el.cod).join('-')
+    const tickerPricing = await this.ticker.accioTickerDataRequest(query)
+    let totalPatrimony = 0;
+
+    tickers.forEach(tickerItem => {
+      // Encontra o preço atual correspondente
+      const pricing = tickerPricing.find(p => p.ticker === tickerItem.cod);
+      if (pricing) {
+        totalPatrimony += pricing.curPrc * tickerItem.qtd;
+      }
+    });
+    return totalPatrimony
+  }
+
+  private hexGenerator = () => {
+    const maxDarkValue = 100; // tonalidade - 100 escuro >++
+  const r = Math.floor(Math.random() * (maxDarkValue + 1))
+    .toString(16)
+    .padStart(2, '0');
+  const g = Math.floor(Math.random() * (maxDarkValue + 1))
+    .toString(16)
+    .padStart(2, '0');
+  const b = Math.floor(Math.random() * (maxDarkValue + 1))
+    .toString(16)
+    .padStart(2, '0');
+  return `#${r}${g}${b}`;
+  }
+
 }

@@ -61,12 +61,32 @@ Route.get("/home/aports/:year", async (ctx) => {
   return new HomeController().AportsGraph(ctx);
 });
 
+Route.get("/wallet/resume", async () => {
+  const { default: InvestmentsWalletsController } = await import(
+    "App/Controllers/Http/InvestmentsWalletsController"
+  );
+  return new InvestmentsWalletsController().resume();
+});
+
+Route.get("/wallet/composition", async () => {
+  const { default: InvestmentsWalletsController } = await import(
+    "App/Controllers/Http/InvestmentsWalletsController"
+  );
+  return new InvestmentsWalletsController().compositionList();
+});
 
 Route.get("/wallet/assets-list", async () => {
   const { default: InvestmentsWalletsController } = await import(
     "App/Controllers/Http/InvestmentsWalletsController"
   );
   return new InvestmentsWalletsController().assetsList();
+});
+
+Route.get("/wallet/rentability/:year", async (ctx) => {
+  const { default: InvestmentsWalletsController } = await import(
+    "App/Controllers/Http/InvestmentsWalletsController"
+  );
+  return new InvestmentsWalletsController().rentability(ctx);
 });
 
 Route.get("/wallet/dividends-list", async () => {
