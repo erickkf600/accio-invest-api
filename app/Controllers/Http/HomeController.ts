@@ -59,7 +59,7 @@ public async cdiRequest(year: any){
     .select('id', 'total', 'fee', 'month_ref', 'unity_value', 'cod', 'date_operation', 'qtd', 'type_operation', 'type', 'year')
     .orderBy('year', 'desc')
     .orderBy('month_ref', 'desc')
-    .whereIn('type_operation', [1,3])
+    .whereIn('type_operation', [1,3,5])
     movements = movements.map(m => m.toJSON());
 
     const total = assets.reduce((acc: any, {total}: any) => acc+Number(total), 0)
@@ -240,7 +240,7 @@ private async myResturnAsset(year: any) {
       let movements: any = await Movement.query()
       .select('year')
       .select(Database.raw('round(sum(total), 2) as total'))
-      .whereIn('type_operation', [1,3])
+      .whereIn('type_operation', [1,3,5])
       .orderBy('year', 'asc')
       .groupBy('year')
       movements = movements.map(m => m.toJSON());
@@ -258,7 +258,7 @@ private async myResturnAsset(year: any) {
       const movements: any = await Movement.query()
       .select('month_ref', 'year', 'type_operation')
       .select(Database.raw('round(sum(total), 2) as total'))
-      .whereIn('type_operation', [1,3])
+      .whereIn('type_operation', [1,3,5])
       .groupBy('type_operation','month_ref', 'year')
       .preload('month')
       .orderBy('year', 'asc')
@@ -294,7 +294,7 @@ private async myResturnAsset(year: any) {
     const quarterly: any = await Movement.query()
       .select('month_ref', 'year', 'type_operation')
       .select(Database.raw('round(sum(total), 2) as total'))
-      .whereIn('type_operation', [1,3])
+      .whereIn('type_operation', [1,3,5])
       .groupBy('type_operation','month_ref', 'year')
       .preload('month')
       .orderBy('year', 'asc')

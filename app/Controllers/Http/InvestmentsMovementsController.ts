@@ -183,7 +183,7 @@ export default class InvestmentsMovementsController {
             total_fee: iterator.fee,
             user_id: userId,
           })
-        } else if (iterator.type_operation === 3) { // Dividendos
+        } else if (iterator.type_operation === 3 || iterator.type_operation === 5) { // Dividendos
           toUpdate.push({
             cod: iterator.cod,
             total_rendi: iterator.total,
@@ -374,7 +374,7 @@ export default class InvestmentsMovementsController {
       asset.quantity += movement.qtd;
       asset.total += movement.total;
       asset.total_fee -= movement.fee;
-    } else if (movement.type_operation === 3) {
+    } else if (movement.type_operation === 3 || movement.type_operation === 5) {
       asset.total_rendi -= movement.total;
     } else if (movement.type_operation === 4) {
       const unfolding = await Unfolding.query()
@@ -430,7 +430,7 @@ export default class InvestmentsMovementsController {
       asset.quantity -= movement.qtd;
       asset.total -= movement.total;
       asset.total_fee += movement.fee;
-    } else if (movement.type_operation === 3) {
+    } else if (movement.type_operation === 3 || movement.type_operation === 5) {
       asset.total_rendi += movement.total;
     } else if (movement.type_operation === 4) {
 
@@ -483,7 +483,7 @@ export default class InvestmentsMovementsController {
     asset.quantity += movement.qtd;
     asset.total += movement.total;
     asset.total_fee -= movement.fee;
-  } else if (movement.type_operation === 3) {
+  } else if (movement.type_operation === 3 || movement.type_operation === 5) {
     asset.total_rendi -= movement.total;
   } else if (movement.type_operation === 4 && unfoldId) {
     const unfolding = await Unfolding.query()

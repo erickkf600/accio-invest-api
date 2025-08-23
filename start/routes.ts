@@ -89,11 +89,11 @@ Route.get("/wallet/rentability/:year", async (ctx) => {
   return new InvestmentsWalletsController().rentability(ctx);
 });
 
-Route.get("/wallet/dividends-list", async () => {
+Route.get("/wallet/dividends-list", async (ctx) => {
   const { default: InvestmentsWalletsController } = await import(
     "App/Controllers/Http/InvestmentsWalletsController"
   );
-  return new InvestmentsWalletsController().dividendsList();
+  return new InvestmentsWalletsController().dividendsList(ctx);
 });
 Route.get("/wallet/patrimony-gain", async () => {
   const { default: InvestmentsWalletsController } = await import(

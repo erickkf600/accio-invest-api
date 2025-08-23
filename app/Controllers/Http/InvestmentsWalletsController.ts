@@ -87,7 +87,7 @@ public async resume(){
 
     const dividends: any = await Movement.query()
     .select('id', 'cod', 'type', 'qtd', 'total', 'date_operation')
-    .where('type_operation', 3)
+    .whereIn('type_operation', [3,5])
     .where('user_id', userId)
     if(!assets.length) return []
 
@@ -153,7 +153,7 @@ public async resume(){
 
   const dividends: any = await Movement.query()
   .select('id', 'cod', 'type', 'qtd', 'total', 'date_operation')
-  .where('type_operation', 3)
+  .whereIn('type_operation', [3,5])
   .where('user_id', userId);
 
   const query = assets.map((el: any) => el.cod).join('-')
@@ -212,31 +212,31 @@ public async resume(){
   public async rentability(ctx: HttpContextContract){
     const userId = 1
     const year: number = ctx.params.year;
-    const assets: any = await Asset.query()
+
+    let assets: any = await Asset.query()
     .where('user_id', userId)
     .andWhere('quantity', '>', 0)
     .select('cod', 'quantity', 'total_rendi', 'medium_price', 'type', 'total', 'total_fee', 'created_at')
     .preload('assetsType')
-    if(!assets.length) return []
 
-    // todo dar um jeito de trazer a qtd que tenho na payment_date
-    // const movements = await Movement.query()
-    // .select('cod', 'month_ref', 'year', 'type_operation', 'total', 'rentability', 'qtd', 'fee')
-    // .orderBy('year', 'asc')
-    // .orderBy('month_ref', 'asc')
-    // .where('type_operation', 1)
-    // .andWhere('user_id', userId)
-
-    // const groupedMov = groupBy(movements, item => `${item.month_ref}-${item.year}-${item.type_operation}`);
-
-    // const resultGrouped = map(groupedMov, (items, key) => {
-    //   return {
-    //     qtd: items.reduce((acc, i) => acc + Number(i.qtd), 0)
-    //   };
-    // });
-    // return resultGrouped
+    assets = assets.map(m => m.toJSON());
 
 
+    if (!assets.length) return []
+
+    const movements = await Movement.query()
+    .select('cod', 'month_ref', 'year', 'type', 'type_operation', 'total', 'rentability', 'qtd', 'fee', 'date_operation')
+    .orderBy('date_operation', 'asc')
+    .whereIn('type_operation', [1,2,3,5])
+    .where('user_id', userId)
+    .preload('assetsType')
+    .preload('typeOperation')
+
+    const startYear = Math.min(
+      ...movements
+        .filter(el => el.type_operation === 3 || el.type_operation === 5)
+        .map(item => item.year)
+    );
     const grouped = groupBy(assets, 'type');
 
     const composition = map(grouped, (items) => ({
@@ -244,80 +244,197 @@ public async resume(){
       total: sumBy(items, (item) => parseFloat(item.total_rendi)),
       hex: this.hexGenerator()
     }))
+
     const start = new Date(year, 0, 1).toISOString().split("T")[0];
-    const end = new Date(year, 11, 31).toISOString() .split("T")[0];
+    const end = new Date(year, 11, 31).toISOString().split("T")[0];
 
     const payload = {
       dataInicio: start,
       dataFim: end,
-      papeis_tipos: assets.map((el: any) => ({papel: el.cod, tipo: el.type}))
+      papeis_tipos: assets.map((el: any) => ({ papel: el.cod, tipo: el.type }))
     }
-
 
     const historyEarnings = await this.ticker.accioTickerEarningsRequest(payload)
 
     const flattened = historyEarnings.flatMap(item =>
-      item.proventos.map(p => ({
-        payment_date: p.payment_date,
-        cod: item.ticker,
-        percent: p.percent,
-        value: p.value,
-        date_com: p.date_com,
-        month_ref:  +p.payment_date.split('/')[1],
-        year:  +p.payment_date.split('/')[2],
-      }))
+      item.proventos.map(p => {
+        const mov = movements.find(el => el.cod === item.ticker && el.type_operation === 3);
+        return {
+          payment_date: p.payment_date,
+          cod: item.ticker,
+          percent: p.percent,
+          value: p.value,
+          date_com: p.date_com,
+          month_ref:  +p.payment_date.split('/')[1],
+          year:  +p.payment_date.split('/')[2],
+          type: movements.find(el => el.cod === item.ticker)?.assetsType,
+          typeOperation: mov?.typeOperation || { id: 3, title: 'Dividendos' }
+        }
+      })
     );
-    const today = new Date();
-    const result: { payed: any[]; expected: any[] } = {
-      payed: [],
-      expected: []
-    };
 
-    flattened.forEach(item => {
+    const rentalDividends = movements
+    .filter(m => m.type_operation === 5)
+    .map(m => ({
+      payment_date: m.date_operation,
+      cod: m.cod,
+      percent: null,
+      value: m.rentability ?? m.total,
+      date_com: m.date_operation,
+      month_ref: m.month_ref,
+      year: m.year,
+      type: m.assetsType,
+      typeOperation: m.typeOperation
+    }));
+
+    const allDividends = [...flattened, ...rentalDividends];
+
+    // função para calcular quantidade em carteira até uma data
+    function getQuantityAtDate(movements: Movement[], cod: string, dateCom: string): number {
+      const [day, month, year] = dateCom.split("/").map(Number);
+      const dateComParsed = new Date(year, month - 1, day);
+
+      return movements
+        .filter(m => m.cod === cod)
+        .filter(m => {
+          const [d, mth, y] = m.date_operation.split("/").map(Number);
+          const movDate = new Date(y, mth - 1, d);
+          return movDate <= dateComParsed;
+        })
+        .reduce((acc, m) => {
+          if (m.type_operation === 1) { // compra
+            return acc + m.qtd;
+          } else if (m.type_operation === 2) { // venda
+            return acc - m.qtd;
+          }
+          return acc;
+        }, 0);
+    }
+
+    const enriched = allDividends.map(item => {
       const [day, month, year] = item.payment_date.split("/").map(Number);
-      const paymentDate =  new Date(year, month - 1, day);
-      if (paymentDate <= today) {
-          result.payed.push(item);
-      } else {
-          result.expected.push(item);
-      }
-  });
+      const paymentDate = new Date(year, month - 1, day);
 
-    return {composition, ...result}
+      const qtdAtDate = getQuantityAtDate(movements, item.cod, item.date_com);
+      let totalReceived = qtdAtDate * item.value;
+      if(!item?.percent||item.percent === '0.00') {
+        const mediumPrice = assets.find(el => el.cod === item.cod)?.medium_price
+        if(mediumPrice) {
+          item.percent = item.value / Number(mediumPrice) * 100
+        }
+      }
+      // checa se já tem registro no banco
+      const alreadyRegistered = movements.some(m => {
+        if (m.cod !== item.cod) return false;
+
+        const [d, mth, y] = m.date_operation.split("/").map(Number);
+        const movDate = new Date(y, mth - 1, d);
+
+        return (
+          movDate.getTime() === paymentDate.getTime() &&
+          (m.type_operation === 3 || m.type_operation === 5)// supondo que 3  ou 5 = dividendos
+        );
+      });
+      let status = alreadyRegistered ? "registered" : "not_registered";
+
+      if (item.typeOperation?.id === 5 || item.typeOperation?.code === 5) {
+        status = "rent";
+        totalReceived = +item.value
+      }
+
+      return {
+        ...item,
+        qtdAtDate,
+        totalReceived,
+        status: status
+      };
+    });
+
+    return { startYear, composition, earnings: enriched }
   }
-  public async dividendsList() {
+  public async dividendsList(ctx: HttpContextContract) {
+    const {start, end}: any = ctx.request.qs();
     const userId = 1
-    const dividends: any = await Movement.query()
-    .select('cod', 'date_operation', 'qtd', 'unity_value', 'total', 'type', 'year', 'month_ref')
-    .where('type_operation', 3)
-    .andWhere('user_id', userId)
-    .orderBy('year', 'desc')
-    .orderBy('month_ref', 'desc')
+    let assets: any = await Asset.query()
+    .where('user_id', userId)
+    .andWhere('quantity', '>', 0)
+    .select('cod', 'quantity', 'total_rendi', 'medium_price', 'type', 'total', 'total_fee', 'created_at')
     .preload('assetsType')
 
-    const response = dividends.map((res: any) =>{
-      return {
-        cod: res.cod,
-        date_operation: res.date_operation,
-        qtd: res.qtd,
-        type: res.assetsType.title,
-        unity_value: +res.unity_value,
-        total: +res.total,
-        month_ref: res.month_ref,
-        year: res.year,
-      }
-    })
-    return response
-  }
+    assets = assets.map(m => m.toJSON());
 
+    if (!assets.length) return []
+
+    const movements = await Movement.query()
+    .select('cod', 'month_ref', 'year', 'type', 'type_operation', 'total', 'rentability', 'qtd', 'fee', 'date_operation')
+    .orderBy('date_operation', 'asc')
+    .whereIn('type_operation', [1,2])
+    .where('user_id', userId)
+    .preload('assetsType')
+    .preload('typeOperation')
+
+    const payload = {
+      dataInicio: start,
+      dataFim: end,
+      papeis_tipos: assets.map((el: any) => ({ papel: el.cod, tipo: el.type }))
+    }
+
+    const historyEarnings = await this.ticker.accioTickerEarningsRequest(payload)
+
+    const flattened = historyEarnings.flatMap(item =>
+      item.proventos.map(p => {
+        return {
+          payment_date: p.payment_date,
+          cod: item.ticker,
+          value: p.value,
+          date_com: p.date_com,
+          type: assets.find(el => el.cod === item.ticker)?.assetsType.id,
+          type_operation: 3,
+        }
+      })
+    );
+
+    // função para calcular quantidade em carteira até uma data
+    function getQuantityAtDate(movements: Movement[], cod: string, dateCom: string): number {
+      const [day, month, year] = dateCom.split("/").map(Number);
+      const dateComParsed = new Date(year, month - 1, day);
+
+      return movements
+        .filter(m => m.cod === cod)
+        .filter(m => {
+          const [d, mth, y] = m.date_operation.split("/").map(Number);
+          const movDate = new Date(y, mth - 1, d);
+          return movDate <= dateComParsed;
+        })
+        .reduce((acc, m) => {
+          if (m.type_operation === 1) { // compra
+            return acc + m.qtd;
+          } else if (m.type_operation === 2) { // venda
+            return acc - m.qtd;
+          }
+          return acc;
+        }, 0);
+    }
+
+    const enriched = flattened.map(item => {
+      const qtdAtDate = getQuantityAtDate(movements, item.cod, item.date_com);
+      return  {
+        ...item,
+        qtdAtDate
+      }
+    }).filter(el => el.qtdAtDate > 0)
+
+    return enriched
+  }
 
   public async patrimonyGainList(order: 'asc' | 'desc' = 'asc') {
     const userId = 1
+
     const movements = await Movement.query()
     .select('cod', 'month_ref', 'year', 'type_operation', 'total', 'rentability', 'qtd', 'fee')
     .orderBy('year', 'asc')
     .orderBy('month_ref', 'asc')
-    .whereIn('type_operation', [1,3])
+    .whereIn('type_operation', [1,3,5])
     .andWhere('user_id', userId)
 
     const grouped = groupBy(movements, item => `${item.month_ref}-${item.year}-${item.type_operation}`);
@@ -336,7 +453,7 @@ public async resume(){
     });
     const purchase = resultGrouped.filter((p) => p.type_operation === 1)
 
-    const dividends = resultGrouped.filter((p) => p.type_operation === 3)
+    const dividends = resultGrouped.filter((p) => p.type_operation === 3 || p.type_operation === 5)
 
     const accumulated = await this.accumulationCacl.someTotais(purchase.map(el => el.total))
     const accumulatedQtd = await this.accumulationCacl.someTotais(purchase.map(el => el.qtd))
@@ -377,10 +494,13 @@ public async resume(){
       };
     });
 
-    return  orderBy(result, r => {
+    const orderedResult = orderBy(result, r => {
       const [m, y] = r.month.split("/");   // ex: "09/22" => ["09","22"]
       return y + m;                        // "22" + "09" = "2209"
     }, [order]);
+
+
+    return  orderedResult
   }
 
   public async VariationsList() {
@@ -434,7 +554,7 @@ public async resume(){
     const dividendsCurrent: any = await Movement.query()
     .select('cod', 'date_operation', 'qtd', 'unity_value', 'type', 'year', 'month_ref', 'type_operation')
     .select(Database.raw('round(sum(total), 2) as total'))
-    .where('type_operation', 3)
+    .whereIn('type_operation', [3,5])
     .andWhere('user_id', userId)
     .groupBy('year', 'month_ref')
     .preload('assetsType')
