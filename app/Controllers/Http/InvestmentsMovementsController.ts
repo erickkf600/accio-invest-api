@@ -6,6 +6,7 @@ import Unfolding from 'App/Models/Unfolding';
 import moment from 'moment'
 import TickerRequests from 'App/services/ticker-requests.service';
 import { DateTime } from 'luxon';
+import FixedIncome from 'App/Models/FixedIncome';
 
 export default class InvestmentsMovementsController {
   private ticker = new TickerRequests()
@@ -13,12 +14,15 @@ export default class InvestmentsMovementsController {
     const page: number = ctx.params.page;
     const limit: number = ctx.params.limit;
     let movements: any = await Movement.query()
-    .select('id', 'cod', 'date_operation', 'qtd', 'type', 'type_operation', 'unity_value', 'obs', 'fee', 'total', 'unfold_id')
+    .select('id', 'cod', 'date_operation', 'qtd', 'type', 'type_operation', 'unity_value', 'obs', 'fee', 'total', 'unfold_id', 'fix_id')
     .preload('typeOperation', (query) =>{
       query.select('title', 'full_title')
     })
     .preload('assetsType', (query) =>{
       query.select('title', 'full_title')
+    })
+    .preload('fixedIncome', (query) => {
+      query.select('id', 'emissor', 'interest_rate', 'invest_type', 'title_type', 'date_operation', 'date_expiration', 'form', 'index', 'obs', 'total', 'daily_liquidity', 'other_cost')
     })
     .preload('unfoldOperation', (query) => {
       query.select('id', 'from', 'to', 'factor')
@@ -44,6 +48,8 @@ export default class InvestmentsMovementsController {
       }
       if (el.unfoldOperation) {
         base.split_inplit = el.unfoldOperation;
+      }else if(el.fixedIncome) {
+        base.fixed_income = el.fixedIncome;
       }
 
       return base
@@ -132,7 +138,6 @@ export default class InvestmentsMovementsController {
 
   }
 
-  // todo falar pro gpt criar uma versao mais enxuta e tipada do crete update e delete????
   public async register(ctx: HttpContextContract) {
     const body: any = ctx.request.body()
     const items = Array.isArray(body) ? body : [body] // normaliza para array
@@ -513,6 +518,210 @@ export default class InvestmentsMovementsController {
 
   return { success: true };
   }
+  public async registerFixedIncoming(ctx: HttpContextContract) {
+    const body: any = ctx.request.body()
+    const items = Array.isArray(body) ? body : [body]
+    const userId = 1
+
+    try {
+      for (const iterator of items) {
+        let fixedIncomes: any = null
+        const { date_operation, date_expiration, value, other_cost, emissor } = iterator
+        const [_, month, year] = date_operation.split('/')
+
+        // cria o identificador único
+        const cod = `${emissor.replace(/\s/g, "_")}_${date_expiration.replace(/\//g, "")}`
+        // === 1) FixedIncome ===
+        fixedIncomes = await FixedIncome.create({
+          emissor,
+          interest_rate: iterator.interest_rate,
+          invest_type: iterator.invest_type,
+          title_type: iterator.title_type,
+          date_operation,
+          date_expiration,
+          form: iterator.form,
+          index: iterator.index,
+          obs: iterator.obs,
+          total: Number(value),
+          daily_liquidity: iterator.daily_liquidity ? 1 : 0,
+          other_cost: Number(other_cost || 0),
+          user_id: userId,
+        })
+
+        // === 2) Asset ===
+        let asset = await Asset.query()
+          .where('cod', cod)
+          .andWhere('user_id', userId)
+          .first()
+
+        if (!asset) {
+          asset = await Asset.create({
+            cod,
+            quantity: 1,
+            total: Number(value),
+            total_fee: Number(other_cost || 0),
+            total_rendi: 0,
+            type: 3,
+            user_id: userId,
+            medium_price: Number(value),
+          })
+        } else {
+          asset.quantity = Number(asset.quantity) + 1
+          asset.total = Number(asset.total) + Number(value)
+          asset.total_fee = Number(asset.total_fee) + Number(other_cost || 0)
+          asset.medium_price = asset.quantity > 0
+            ? (asset.total - asset.total_fee) / asset.quantity
+            : 0
+          await asset.save()
+        }
+
+        // === 3) Movement ===
+        await Movement.create({
+          cod,
+          date_operation,
+          qtd: 1,
+          type: 3,
+          type_operation: 1,
+          unity_value: Number(value),
+          total: Number(value),
+          fee: Number(other_cost || 0),
+          rentability: '',
+          obs: iterator.obs,
+          user_id: userId,
+          month_ref: +month,
+          year: +year,
+          fix_id: fixedIncomes?.id
+        })
+      }
+
+      return { success: true }
+    } catch (error) {
+      console.error(error)
+      throw { code: 4, message: `Erro ao cadastrar renda fixa: ${error}` }
+    }
+  }
+
+  public async updateFixedIncome(ctx: HttpContextContract) {
+    const id: number = ctx.params.id;
+    const body: any = ctx.request.body();
+
+    // Movement a ser atualizado
+    const movement = await Movement.findOrFail(id);
+
+     // Busca FixedIncome via chave estrangeira
+    const fixedIncome = await FixedIncome.findOrFail(movement.fix_id);
+
+    const asset = await Asset.query()
+      .where("cod", movement.cod)
+      .andWhere("user_id", movement.user_id)
+      .firstOrFail();
+
+    // Reverte efeito antigo no Asset
+    asset.quantity -= movement.qtd;
+    asset.total -= Number(movement.total);
+    asset.total_fee -= Number(movement.fee);
+
+    // Atualiza FixedIncome
+    fixedIncome.merge({
+      emissor: body.emissor ?? fixedIncome.emissor,
+      interest_rate: body.interest_rate ?? fixedIncome.interest_rate,
+      invest_type: body.invest_type ?? fixedIncome.invest_type,
+      title_type: body.title_type ?? fixedIncome.title_type,
+      date_operation: body.date_operation ?? fixedIncome.date_operation,
+      date_expiration: body.date_expiration ?? fixedIncome.date_expiration,
+      form: body.form ?? fixedIncome.form,
+      index: body.index ?? fixedIncome.index,
+      obs: body.obs ?? fixedIncome.obs,
+      total: body.value ? Number(body.value) : fixedIncome.total,
+      daily_liquidity: body.daily_liquidity !== undefined ? (body.daily_liquidity ? 1 : 0) : fixedIncome.daily_liquidity,
+      other_cost: body.other_cost !== undefined ? Number(body.other_cost) : fixedIncome.other_cost,
+    });
+
+
+    // Novo identificador único (caso emissor ou expiração mudem)
+    const cod = `${fixedIncome.emissor.replace(/\s/g, "_")}_${fixedIncome.date_expiration.replace(/\//g, "")}`;
+    const [_, monthRef, year] = fixedIncome.date_operation.split('/');
+
+     // Atualiza Movement
+    movement.merge({
+      cod,
+      date_operation: fixedIncome.date_operation,
+      qtd: 1,
+      type: 3,
+      type_operation: 1,
+      unity_value: fixedIncome.total,
+      total: fixedIncome.total,
+      fee: fixedIncome.other_cost,
+      rentability: '',
+      obs: fixedIncome.obs,
+      month_ref: +monthRef,
+      year: +year,
+      updated_at: DateTime.fromJSDate(new Date()),
+    });
+
+     // Aplica efeito novo no Asset
+      asset.cod = cod;
+      asset.quantity += 1;
+      asset.total += Number(movement.total);
+      asset.total_fee += Number(movement.fee);
+
+      if (asset.quantity <= 0) {
+        asset.quantity = 0;
+        asset.total = 0;
+        asset.total_fee = 0;
+      }
+
+      asset.medium_price = asset.quantity > 0
+        ? round((asset.total - asset.total_fee) / asset.quantity, 3)
+        : 0;
+
+      await fixedIncome.save();
+      await movement.save();
+      await asset.save();
+
+      return { success: true };
+  }
+
+  public async deleteFixedIncome(ctx: HttpContextContract) {
+    const id: number = ctx.params.id;
+
+    // Movement a ser removido
+    const movement = await Movement.findOrFail(id);
+
+    // FixedIncome relacionado
+    const fixedIncome = await FixedIncome.findOrFail(movement.fix_id);
+
+     // Asset relacionado
+    const asset = await Asset.query()
+    .where("cod", movement.cod)
+    .andWhere("user_id", movement.user_id)
+    .firstOrFail();
+
+     // Reverte movimento no Asset
+    asset.quantity -= movement.qtd;
+    asset.total -= Number(movement.total);
+    asset.total_fee -= Number(movement.fee);
+
+    if (asset.quantity <= 0) {
+      asset.quantity = 0;
+      asset.total = 0;
+      asset.total_fee = 0;
+    }
+
+    asset.medium_price = asset.quantity > 0
+    ? round((asset.total - asset.total_fee) / asset.quantity, 3)
+    : 0;
+
+    await asset.save();
+
+    // Apaga registros
+    await movement.delete();
+    await fixedIncome.delete();
+    return { success: true };
+  }
+
+
+
 
 
   public async showFilteredItemsByType(ctx: HttpContextContract) {

@@ -148,6 +148,24 @@ Route.post("/moviments", async (ctx) => {
   );
   return new InvestmentsMovementsController().register(ctx);
 });
+Route.post("/moviments/fixed-incoming", async (ctx) => {
+  const { default: InvestmentsMovementsController } = await import(
+    "App/Controllers/Http/InvestmentsMovementsController"
+  );
+  return new InvestmentsMovementsController().registerFixedIncoming(ctx);
+});
+Route.patch("/moviments/fixed-incoming/:id", async (ctx) => {
+  const { default: InvestmentsMovementsController } = await import(
+    "App/Controllers/Http/InvestmentsMovementsController"
+  );
+  return new InvestmentsMovementsController().updateFixedIncome(ctx);
+});
+Route.delete("/moviments/fixed-incoming/:id", async (ctx) => {
+  const { default: InvestmentsMovementsController } = await import(
+    "App/Controllers/Http/InvestmentsMovementsController"
+  );
+  return new InvestmentsMovementsController().deleteFixedIncome(ctx);
+});
 
 Route.patch("/moviments/:id", async (ctx) => {
   const { default: InvestmentsMovementsController } = await import(
@@ -155,6 +173,7 @@ Route.patch("/moviments/:id", async (ctx) => {
   );
   return new InvestmentsMovementsController().update(ctx);
 });
+
 Route.delete("/moviments/:id", async (ctx) => {
   const { default: InvestmentsMovementsController } = await import(
     "App/Controllers/Http/InvestmentsMovementsController"

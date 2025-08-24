@@ -6,7 +6,9 @@ import Movement from 'App/Models/Movement';
 import AccumulativeCalc from 'App/services/accumulative-calc';
 import TickerRequests from 'App/services/ticker-requests.service';
 import axios from 'axios';
-import { groupBy, keyBy, map, orderBy, sumBy, uniqBy } from 'lodash';
+import { groupBy, keyBy, map, orderBy, sumBy } from 'lodash';
+import { INDEX_TYPES } from 'App/mocks/indexTypes';
+import { DateTime } from 'luxon';
 
 export default class InvestmentsWalletsController {
   private ticker = new TickerRequests()
@@ -53,7 +55,7 @@ export default class InvestmentsWalletsController {
 
     return req
 }
-
+// TODO CALCULAR O REDIMENTO DA RF NO TOTAL DO PATRIMONIO, ESTUDAR OQUE É O gross up e adcionar no codigo os calculos com imposto de renda
 public async resume(){
   const userId = 1
     const assets: any = await Asset.query()
@@ -76,72 +78,161 @@ public async resume(){
   return {patrimony, ...totals}
 }
 
-  public async compositionList(){
-    const userId = 1
-    const assets: any = await Asset.query()
+public async compositionList() {
+  const userId = 1
+
+  // 1️⃣ Ativos do usuário
+  const assets: any = await Asset.query()
     .where('user_id', userId)
     .andWhere('quantity', '>', 0)
     .select('cod', 'quantity', 'total_rendi', 'medium_price', 'type', 'total', 'total_fee')
     .preload('assetsType')
-    if(!assets.length) return []
 
-    const dividends: any = await Movement.query()
-    .select('id', 'cod', 'type', 'qtd', 'total', 'date_operation')
-    .whereIn('type_operation', [3,5])
+  if (!assets.length) return []
+
+  // 2️⃣ Movimentos
+  const movements: any = await Movement.query()
+    .select('id', 'cod', 'type', 'qtd', 'total', 'date_operation', 'fix_id', 'type_operation')
+    .whereIn('type_operation', [1, 3, 5])
+    .preload('fixedIncome')
     .where('user_id', userId)
-    if(!assets.length) return []
 
-    const grouped = groupBy(assets, 'type');
+  // 3️⃣ Dividendos
+  const dividends = movements.filter((el) => [3, 5].includes(el.type_operation))
 
-  const now = new Date();
-  const lastYear = new Date();
-  lastYear.setFullYear(now.getFullYear() - 1);
-  const last30Days = new Date();
-  last30Days.setDate(now.getDate() - 30);
+  // 4️⃣ Agrupamento por tipo
+  const grouped = groupBy(assets, 'type')
 
+  // 5️⃣ Datas de referência
+  const now = DateTime.now()
+  const lastYear = now.minus({ years: 1 })
+  const last30Days = now.minus({ days: 30 })
+
+  // 6️⃣ Processamento FixedIncome
+  const fixedIn = movements.filter((el) => !!el?.fixedIncome)
+  const expired: any[] = []
+
+  if (fixedIn.length) {
+    for (const mov of fixedIn) {
+      const fi = mov.fixedIncome
+
+      const expiration = DateTime.fromFormat(fi.date_expiration, 'dd/MM/yyyy')
+      const operationDate = DateTime.fromFormat(fi.date_operation, 'dd/MM/yyyy')
+
+      // se já venceu → marcar
+      if (expiration <= now) {
+        expired.push(fi)
+        continue
+      }
+
+      // datas formatadas DD/MM/YYYY
+      const start = operationDate.toFormat('dd/MM/yyyy')
+      const end = now.toFormat('dd/MM/yyyy')
+
+      let dataApi: any[] = []
+
+      if (fi.index === 1) {
+        dataApi = await this.ticker.cdiData(start, end)
+      } else if (fi.index === 2) {
+        dataApi = await this.ticker.ipcaData(start, end)
+      } else if (fi.index === 3) {
+        dataApi = await this.ticker.selicData(start, end)
+      }
+
+      if (Array.isArray(dataApi) && dataApi.length > 0) {
+        const taxa = parseFloat(fi.interest_rate) || 0
+
+        // total acumulado
+        const totalRend = dataApi.reduce((acc, item) => acc + parseFloat(item.valor), 0) * (taxa / 100)
+
+        // últimos 12 meses
+        const last12Rend = dataApi
+          .filter(item => {
+            const dt = DateTime.fromFormat(item.data, 'dd/MM/yyyy')
+            return dt.toMillis() >= lastYear.toMillis() && dt.toMillis() <= now.toMillis()
+          })
+          .reduce((acc, item) => acc + parseFloat(item.valor), 0) * (taxa / 100)
+
+
+        // últimos 30 dias
+        const last30Rend = dataApi
+          .filter(item => {
+            const dt = DateTime.fromFormat(item.data, 'dd/MM/yyyy')
+            return dt.toMillis() >= last30Days.toMillis() && dt.toMillis() <= now.toMillis()
+          })
+          .reduce((acc, item) => acc + parseFloat(item.valor), 0) * (taxa / 100)
+
+          console.log(last30Rend, last12Rend)
+
+
+        mov.calculatedRent = totalRend
+        mov.calculatedRent12 = last12Rend
+        mov.calculatedRentMonth = last30Rend
+      }
+    }
+  }
+
+  // 7️⃣ Resultado por tipo de ativo
   let result = map(grouped, (items) => {
-    const qtd = sumBy(items, 'quantity');
-    const total = sumBy(items, (i) => parseFloat(i.total));
-    const total_rent = sumBy(items, (i) => parseFloat(i.total_rendi));
+    const qtd = sumBy(items, 'quantity')
+    const total = sumBy(items, (i) => parseFloat(i.total))
+    const total_rent = sumBy(items, (i) => parseFloat(i.total_rendi))
 
-    const codes = items.map(i => i.cod);
-    const dividendsGroup = dividends.filter(d => codes.includes(d.cod));
+    const codes = items.map((i) => i.cod)
+    const dividendsGroup = dividends.filter((d) => codes.includes(d.cod))
 
-    // Rendimento últimos 30 dias
+    // últimos 30 dias
     const rentMonth = sumBy(dividendsGroup, (d: any) => {
-      const [day, month, year] = d.date_operation.split('/').map(Number);
-      const divDate = new Date(year, month - 1, day);
-      return divDate >= last30Days && divDate <= now ? parseFloat(d.total) : 0;
-    });
+      const divDate = DateTime.fromFormat(d.date_operation, 'dd/MM/yyyy')
+      return divDate.toMillis() >= last30Days.toMillis() && divDate.toMillis() <= now.toMillis()
+        ? parseFloat(d.total)
+        : 0
+    })
 
-    // Rendimento últimos 12 meses
+    // últimos 12 meses
     const rentLast12 = sumBy(dividendsGroup, (d: any) => {
-      const [day, month, year] = d.date_operation.split('/').map(Number);
-      const divDate = new Date(year, month - 1, day);
-      return divDate >= lastYear && divDate <= now ? parseFloat(d.total) : 0;
-    });
+      const divDate = DateTime.fromFormat(d.date_operation, 'dd/MM/yyyy')
+      return divDate.toMillis() >= lastYear.toMillis() && divDate.toMillis() <= now.toMillis()
+        ? parseFloat(d.total)
+        : 0
+    })
 
     return {
       type: items[0].assetsType.title,
       qtd,
       total,
-      current_value: total, // valor atual placeholder
-      percent_wallet: '0%', // será calculado depois
+      current_value: total,
+      percent_wallet: '0%',
       total_rent: total > 0 ? `${((total_rent / total) * 100).toFixed(2)}%` : '0%',
       rent_last_12: total > 0 ? `${((rentLast12 / total) * 100).toFixed(2)}%` : '0%',
       rent_month: total > 0 ? `${((rentMonth / total) * 100).toFixed(2)}%` : '0%',
       hex: this.hexGenerator()
-    };
-  });
+    }
+  })
 
-  const totalPatrimony = sumBy(result, 'total');
-  result = result.map(item => ({
-    ...item,
-    percent_wallet: totalPatrimony > 0 ? `${((item.total / totalPatrimony) * 100).toFixed(0)}%` : '0%'
-  }));
+  // 8️⃣ Atualiza RF no resultado com FixedIncome
+  const rfGroup = result.find(r => r.type === 'RF')
+  if (rfGroup) {
+    const rentMonth = sumBy(fixedIn, (m: any) => m.calculatedRentMonth || 0)
+    const rentLast12 = sumBy(fixedIn, (m: any) => m.calculatedRent12 || 0)
+    const totalRent = sumBy(fixedIn, (m: any) => m.calculatedRent || 0)
 
-  return result;
+    rfGroup.total_rent = `${totalRent.toFixed(2)}%`
+    rfGroup.rent_last_12 = `${rentLast12.toFixed(2)}%`
+    rfGroup.rent_month = `${rentMonth.toFixed(2)}%`
   }
+
+  // 9️⃣ Ajuste percent_wallet
+  const totalPatrimony = sumBy(result, 'total')
+  result = result.map((item) => ({
+    ...item,
+    percent_wallet: totalPatrimony > 0
+      ? `${((item.total / totalPatrimony) * 100).toFixed(0)}%`
+      : '0%'
+  }))
+
+  return result
+}
   public async assetsList() {
     const userId = 1;
     const assets: any = await Asset.query()
@@ -208,13 +299,13 @@ public async resume(){
 
 }
 
-
   public async rentability(ctx: HttpContextContract){
     const userId = 1
     const year: number = ctx.params.year;
 
     let assets: any = await Asset.query()
     .where('user_id', userId)
+    .whereNot('type', 3)
     .andWhere('quantity', '>', 0)
     .select('cod', 'quantity', 'total_rendi', 'medium_price', 'type', 'total', 'total_fee', 'created_at')
     .preload('assetsType')
@@ -368,7 +459,7 @@ public async resume(){
     const movements = await Movement.query()
     .select('cod', 'month_ref', 'year', 'type', 'type_operation', 'total', 'rentability', 'qtd', 'fee', 'date_operation')
     .orderBy('date_operation', 'asc')
-    .whereIn('type_operation', [1,2])
+    .whereIn('type_operation', [1,2,3,5])
     .where('user_id', userId)
     .preload('assetsType')
     .preload('typeOperation')
@@ -417,12 +508,29 @@ public async resume(){
     }
 
     const enriched = flattened.map(item => {
+      const [day, month, year] = item.payment_date.split("/").map(Number);
+      const paymentDate = new Date(year, month - 1, day);
       const qtdAtDate = getQuantityAtDate(movements, item.cod, item.date_com);
+
+      // checa se já tem registro no banco
+      const alreadyRegistered = movements.some(m => {
+        if (m.cod !== item.cod) return false;
+
+        const [d, mth, y] = m.date_operation.split("/").map(Number);
+        const movDate = new Date(y, mth - 1, d);
+
+        return (
+          movDate.getTime() === paymentDate.getTime() &&
+          (m.type_operation === 3 || m.type_operation === 5)// supondo que 3  ou 5 = dividendos
+        );
+      })
+      let status = alreadyRegistered ? "registered" : "not_registered";
       return  {
         ...item,
-        qtdAtDate
+        qtdAtDate,
+        status: status
       }
-    }).filter(el => el.qtdAtDate > 0)
+    }).filter(el => el.qtdAtDate > 0 && el.status === 'not_registered')
 
     return enriched
   }

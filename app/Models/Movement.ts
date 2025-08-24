@@ -6,6 +6,7 @@ import Type from './Type'
 import User from './User'
 import Asset from './Asset'
 import Unfolding from './Unfolding'
+import FixedIncome from './FixedIncome'
 
 export default class Movement extends BaseModel {
   @column({ isPrimary: true })
@@ -57,6 +58,9 @@ export default class Movement extends BaseModel {
   @column()
   public unfold_id: number
 
+  @column()
+  public fix_id: number
+
   // @column.dateTime({
   //   autoCreate: true,
   //   serialize: (value: DateTime | null) => {
@@ -104,4 +108,10 @@ export default class Movement extends BaseModel {
     foreignKey: 'unfold_id'
   })
   public unfoldOperation: BelongsTo<typeof Unfolding>
+
+  @belongsTo(() => FixedIncome, {
+    localKey: 'id',
+    foreignKey: 'fix_id'
+  })
+  public fixedIncome: BelongsTo<typeof FixedIncome>
 }

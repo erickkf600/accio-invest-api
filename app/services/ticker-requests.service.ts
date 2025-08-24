@@ -45,4 +45,49 @@ export default class TickerRequests {
 
     return req
   }
+
+  public async cdiData(start: string, end: string){
+    const req = await axios.get(`https://api.bcb.gov.br/dados/serie/bcdata.sgs.4391/dados?formato=json&dataInicial=${start}&dataFinal=${end}`)
+    .then((cdi) => {
+      return cdi.data
+    })
+    .catch((err) => {
+      throw {
+        code: 4,
+        message: `Ocorreu um erro ao buscar na api cdiData: ${err}`,
+      };
+    })
+
+    return req
+  }
+
+  public async ipcaData(start: string, end: string){
+    const req = await axios.get(`https://api.bcb.gov.br/dados/serie/bcdata.sgs.10844/dados?formato=json&dataInicial=${start}&dataFinal=${end}`)
+    .then((cdi) => {
+      return cdi.data
+    })
+    .catch((err) => {
+      throw {
+        code: 4,
+        message: `Ocorreu um erro ao buscar na api cdiData: ${err}`,
+      };
+    })
+
+    return req
+  }
+
+  public async selicData(start: string, end: string){
+    const req = await axios.get(`https://api.bcb.gov.br/dados/serie/bcdata.sgs.11/dados?formato=json&dataInicial=${start}&dataFinal=${end}`)
+    .then((cdi) => {
+      return cdi.data
+    })
+    .catch((err) => {
+      throw {
+        code: 4,
+        message: `Ocorreu um erro ao buscar na api cdiData: ${err}`,
+      };
+    })
+
+    return req
+  }
 }

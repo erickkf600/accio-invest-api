@@ -6,7 +6,7 @@ export default class Movements extends BaseSchema {
   public async up () {
     this.schema.createTable(this.tableName, (table) => {
       table.increments('id').primary()
-      table.string("cod", 20)
+      table.string("cod", 50)
       table.string("date_operation", 11).notNullable()
       table.string("rentability", 11).nullable()
       table.integer("qtd", 11).notNullable()
@@ -20,6 +20,7 @@ export default class Movements extends BaseSchema {
       table.decimal('total', 15, 10).nullable()
       table.integer("user_id", 20).unsigned().references('users.id').notNullable().onDelete('CASCADE').onUpdate('CASCADE')
       table.integer("unfold_id", 3).unsigned().nullable().references('unfoldings.id').onDelete('CASCADE').onUpdate('CASCADE')
+      table.integer("fix_id", 3).unsigned().nullable().references('fixed_incomes.id').onDelete('CASCADE').onUpdate('CASCADE')
       table.timestamp('created_at', { useTz: true }).nullable().defaultTo(this.now())
       table.timestamp('updated_at', { useTz: true }).nullable()
       // table.collate('utf8_unicode_ci')
