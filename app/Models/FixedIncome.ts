@@ -48,6 +48,9 @@ export default class FixedIncome extends BaseModel {
   @column()
   public user_id: number
 
+  @column()
+  public expired: boolean
+
   @column.dateTime({ autoCreate: true, autoUpdate: true })
   public 	created_at: DateTime
 

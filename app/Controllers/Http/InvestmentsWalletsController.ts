@@ -55,12 +55,20 @@ export default class InvestmentsWalletsController {
 
     return req
 }
-// TODO CALCULAR O REDIMENTO DA RF NO TOTAL DO PATRIMONIO, ESTUDAR OQUE É O gross up e adcionar no codigo os calculos com imposto de renda
+public async fixedIcomingHist(){
+  const userId = 1
+    const fixedIcome: any = await FixedIncome.query()
+    .where('user_id', userId)
+    .select('id', 'emissor', 'interest_rate', 'invest_type', 'title_type', 'date_operation', 'date_expiration', 'form', 'index', 'obs', 'total', 'daily_liquidity', 'other_cost', 'rentability', 'expired')
+
+    return fixedIcome
+}
+
 public async resume(){
   const userId = 1
     const assets: any = await Asset.query()
     .where('user_id', userId)
-    .andWhere('quantity', '>', 0)
+    // .andWhere('quantity', '>', 0)
     .select('cod', 'quantity', 'total_rendi', 'medium_price', 'type', 'total', 'total_fee')
     .preload('assetsType')
 
@@ -176,6 +184,7 @@ public async compositionList() {
   .andWhere('quantity', '>', 0)
   .select('id', 'cod', 'quantity', 'total_rendi', 'medium_price', 'type', 'total', 'total_fee')
   .preload('assetsType');
+
   if(!assets.length) return []
 
   const dividends: any = await Movement.query()
@@ -242,7 +251,7 @@ public async compositionList() {
     let assets: any = await Asset.query()
     .where('user_id', userId)
     // .whereNot('type', 3)
-    .andWhere('quantity', '>', 0)
+    // .andWhere('quantity', '>', 0)
     .select('cod', 'quantity', 'total_rendi', 'medium_price', 'type', 'total', 'total_fee', 'created_at')
     .preload('assetsType')
 
@@ -265,13 +274,31 @@ public async compositionList() {
         .filter(el => el.type_operation === 3 || el.type_operation === 5)
         .map(item => item.year)
     );
-    const grouped = groupBy(assets, 'type');
+    const hasValue = assets.filter(el => !!el.quantity)
+const dividendsMovements = movements.filter(
+  m => m.type_operation === 3 && m.year <= year
+);
 
-    const composition = map(grouped, (items) => ({
+// Agrupa todos os assets por tipo
+const groupedAll = groupBy(assets, 'type');
+
+  const composition = map(groupedAll, (items) => {
+    // soma os dividendos/proventos dos movimentos associados ao asset
+    const totalDividends = items.reduce((acc, asset) => {
+      const relatedDividends = dividendsMovements.filter(m => m.cod === asset.cod);
+      const sumDividends = relatedDividends.reduce(
+        (sum, m) => sum + (+m.total ?? 0),
+        0
+      );
+      return acc + sumDividends;
+    }, 0);
+
+    return {
       type: items[0].assetsType.title,
-      total: sumBy(items, (item) => parseFloat(item.total_rendi)),
+      total: totalDividends || 0, // mock zerado se não houver movimentos
       hex: this.hexGenerator()
-    }))
+    };
+  });
 
     const start = new Date(year, 0, 1).toISOString().split("T")[0];
     const end = new Date(year, 11, 31).toISOString().split("T")[0];
@@ -279,7 +306,7 @@ public async compositionList() {
     const payload = {
       dataInicio: start,
       dataFim: end,
-      papeis_tipos: assets.filter(el => el.type !== 3).map((el: any) => ({ papel: el.cod, tipo: el.type }))
+      papeis_tipos: hasValue.filter(el => el.type !== 3).map((el: any) => ({ papel: el.cod, tipo: el.type }))
     }
 
     const historyEarnings = await this.ticker.accioTickerEarningsRequest(payload)
@@ -295,6 +322,7 @@ public async compositionList() {
           date_com: p.date_com,
           month_ref:  +p.payment_date.split('/')[1],
           year:  +p.payment_date.split('/')[2],
+          type_id: movements.find(el => el.cod === item.ticker)?.assetsType.id,
           type: movements.find(el => el.cod === item.ticker)?.assetsType,
           typeOperation: mov?.typeOperation || { id: 3, title: 'Dividendos' }
         }
@@ -311,6 +339,7 @@ public async compositionList() {
       date_com: m.date_operation,
       month_ref: m.month_ref,
       year: m.year,
+      type_id: m.assetsType.id,
       type: m.assetsType,
       typeOperation: m.typeOperation,
       fixedIncome: m?.fixedIncome

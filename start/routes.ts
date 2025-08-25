@@ -68,6 +68,13 @@ Route.get("/wallet/resume", async () => {
   return new InvestmentsWalletsController().resume();
 });
 
+Route.get("/wallet/fixed-incoming", async () => {
+  const { default: InvestmentsWalletsController } = await import(
+    "App/Controllers/Http/InvestmentsWalletsController"
+  );
+  return new InvestmentsWalletsController().fixedIcomingHist();
+});
+
 Route.get("/wallet/composition", async () => {
   const { default: InvestmentsWalletsController } = await import(
     "App/Controllers/Http/InvestmentsWalletsController"
