@@ -22,7 +22,7 @@ export default class InvestmentsMovementsController {
       query.select('title', 'full_title')
     })
     .preload('fixedIncome', (query) => {
-      query.select('id', 'emissor', 'interest_rate', 'invest_type', 'title_type', 'date_operation', 'date_expiration', 'form', 'index', 'obs', 'total', 'daily_liquidity', 'other_cost')
+      query.select('id', 'emissor', 'interest_rate', 'invest_type', 'title_type', 'date_operation', 'date_expiration', 'form', 'index', 'obs', 'total', 'daily_liquidity', 'other_cost', 'rentability')
     })
     .preload('unfoldOperation', (query) => {
       query.select('id', 'from', 'to', 'factor')
@@ -720,9 +720,102 @@ export default class InvestmentsMovementsController {
     return { success: true };
   }
 
+  public async registerFixedIncomingRendiment(ctx: HttpContextContract) {
+    const userId = 1
+    const body: any = ctx.request.body()
+
+    try {
+      const movement = await Movement.query()
+        .where("cod", body.emissor)
+        .andWhere("user_id", userId)
+        .firstOrFail();
+
+        const fixedIncomes = await FixedIncome.query()
+        .where("id", movement.fix_id)
+        .andWhere("user_id", userId)
+        .firstOrFail();
+
+      const asset = await Asset.query()
+        .where("cod", movement.cod)
+        .andWhere("user_id", userId)
+        .firstOrFail();
 
 
+      asset.total_rendi = (Number(asset.total_rendi) || 0) + Number(body.total);
+      fixedIncomes.rentability = parseFloat(((body.total / +fixedIncomes.total) * 100).toFixed(6))
+      const [_, month, year] = body.date_operation.split('/')
+      await Movement.create({
+        cod: body.emissor,
+        date_operation: body.date_operation,
+        qtd: 1,
+        type: 3,
+        type_operation: 3,
+        unity_value: Number(body.total),
+        total: Number(body.total),
+        fee: movement.fee,
+        rentability: ((body.total / +movement.total) * 100).toFixed(6),
+        obs: movement.obs,
+        user_id: userId,
+        month_ref: +month,
+        year: +year,
+        fix_id: fixedIncomes?.id
+      })
+      await fixedIncomes.save()
+      await asset.save()
+      return { success: true }
 
+    } catch (error) {
+      console.error(error)
+      throw { code: 4, message: `Erro ao cadastrar rendimento de renda fixa: ${error}` }
+    }
+  }
+
+  public async updateFixedIncomingRendiment(ctx: HttpContextContract) {
+    const id: number = ctx.params.id;
+    const body: any = ctx.request.body();
+
+    const movement = await Movement.findOrFail(id);
+    const fixedIncome = await FixedIncome.findOrFail(movement.fix_id);
+
+    const asset = await Asset.query()
+    .where("cod", movement.cod)
+    .andWhere("user_id", movement.user_id)
+    .firstOrFail();
+
+    asset.total_rendi -= Number(movement.total);
+
+    const rent = parseFloat(((body.total / +fixedIncome.total) * 100).toFixed(6))
+    asset.total_rendi = (Number(asset.total_rendi) || 0) + Number(body.total);
+
+    const [_, month, year] = body.date_operation.split('/')
+    fixedIncome.merge({
+      emissor: body.emissor ?? fixedIncome.emissor,
+      date_operation: body.date_operation ?? fixedIncome.date_operation,
+      rentability: rent
+    });
+
+    movement.merge({
+      cod: body.emissor ?? movement.cod,
+      date_operation: body.date_operation ?? movement.date_operation,
+      qtd: 1,
+      type: 3,
+      type_operation: 3,
+      unity_value: Number(body.total) ?? movement.unity_value,
+      total: Number(body.total) ?? movement.total,
+      fee: movement.fee,
+      rentability: ((body.total / +body.base_value) * 100).toFixed(6) ?? movement.rentability,
+      obs: movement.obs,
+      month_ref: +month,
+      year: +year,
+      updated_at: DateTime.fromJSDate(new Date()),
+    });
+
+    await fixedIncome.save();
+    await movement.save();
+    await asset.save();
+
+    return { success: true };
+  }
 
   public async showFilteredItemsByType(ctx: HttpContextContract) {
     const year: number = ctx.params.year;

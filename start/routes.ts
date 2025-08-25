@@ -122,6 +122,13 @@ Route.post("/wallet/ticker-earnings", async (ctx) => {
   return new InvestmentsWalletsController().earnings(ctx);
 });
 
+Route.get("/wallet/fixed-rentability", async (ctx) => {
+  const { default: InvestmentsWalletsController } = await import(
+    "App/Controllers/Http/InvestmentsWalletsController"
+  );
+  return new InvestmentsWalletsController().fixedRentability(ctx);
+});
+
 Route.get("/moviments/list/:page/:limit", async (ctx) => {
   const { default: InvestmentsMovementsController } = await import(
     "App/Controllers/Http/InvestmentsMovementsController"
@@ -154,11 +161,23 @@ Route.post("/moviments/fixed-incoming", async (ctx) => {
   );
   return new InvestmentsMovementsController().registerFixedIncoming(ctx);
 });
+Route.post("/moviments/fixed-incoming/rendiment", async (ctx) => {
+  const { default: InvestmentsMovementsController } = await import(
+    "App/Controllers/Http/InvestmentsMovementsController"
+  );
+  return new InvestmentsMovementsController().registerFixedIncomingRendiment(ctx);
+});
 Route.patch("/moviments/fixed-incoming/:id", async (ctx) => {
   const { default: InvestmentsMovementsController } = await import(
     "App/Controllers/Http/InvestmentsMovementsController"
   );
   return new InvestmentsMovementsController().updateFixedIncome(ctx);
+});
+Route.patch("/moviments/fixed-incoming/rendiment/:id", async (ctx) => {
+  const { default: InvestmentsMovementsController } = await import(
+    "App/Controllers/Http/InvestmentsMovementsController"
+  );
+  return new InvestmentsMovementsController().updateFixedIncomingRendiment(ctx);
 });
 Route.delete("/moviments/fixed-incoming/:id", async (ctx) => {
   const { default: InvestmentsMovementsController } = await import(

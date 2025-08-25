@@ -40,6 +40,9 @@ export default class FixedIncome extends BaseModel {
   public daily_liquidity: number
 
   @column()
+  public rentability: number
+
+  @column()
   public other_cost: number
 
   @column()

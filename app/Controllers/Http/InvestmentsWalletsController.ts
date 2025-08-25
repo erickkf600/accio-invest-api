@@ -2,12 +2,12 @@ import Env from '@ioc:Adonis/Core/Env';
 import { HttpContextContract } from '@ioc:Adonis/Core/HttpContext';
 import Database from '@ioc:Adonis/Lucid/Database';
 import Asset from 'App/Models/Asset';
+import FixedIncome from 'App/Models/FixedIncome';
 import Movement from 'App/Models/Movement';
 import AccumulativeCalc from 'App/services/accumulative-calc';
 import TickerRequests from 'App/services/ticker-requests.service';
 import axios from 'axios';
 import { groupBy, keyBy, map, orderBy, sumBy } from 'lodash';
-import { INDEX_TYPES } from 'App/mocks/indexTypes';
 import { DateTime } from 'luxon';
 
 export default class InvestmentsWalletsController {
@@ -93,12 +93,24 @@ public async compositionList() {
   // 2️⃣ Movimentos
   const movements: any = await Movement.query()
     .select('id', 'cod', 'type', 'qtd', 'total', 'date_operation', 'fix_id', 'type_operation')
-    .whereIn('type_operation', [1, 3, 5])
+    .whereIn('type_operation', [1, 3])
     .preload('fixedIncome')
     .where('user_id', userId)
 
+
   // 3️⃣ Dividendos
-  const dividends = movements.filter((el) => [3, 5].includes(el.type_operation))
+  const dividends = movements.filter((el) => {
+    // RF vencido
+    if (el.type === 3 && el.fixedIncome?.date_expiration) {
+      const expiration = DateTime.fromFormat(el.fixedIncome.date_expiration, 'dd/MM/yyyy')
+
+      if (expiration < DateTime.now()) {
+        return false // elimina RF vencido
+      }
+    }
+    // mantém outros dividendos
+    return [3, 5].includes(el.type_operation)
+  })
 
   // 4️⃣ Agrupamento por tipo
   const grouped = groupBy(assets, 'type')
@@ -107,70 +119,6 @@ public async compositionList() {
   const now = DateTime.now()
   const lastYear = now.minus({ years: 1 })
   const last30Days = now.minus({ days: 30 })
-
-  // 6️⃣ Processamento FixedIncome
-  const fixedIn = movements.filter((el) => !!el?.fixedIncome)
-  const expired: any[] = []
-
-  if (fixedIn.length) {
-    for (const mov of fixedIn) {
-      const fi = mov.fixedIncome
-
-      const expiration = DateTime.fromFormat(fi.date_expiration, 'dd/MM/yyyy')
-      const operationDate = DateTime.fromFormat(fi.date_operation, 'dd/MM/yyyy')
-
-      // se já venceu → marcar
-      if (expiration <= now) {
-        expired.push(fi)
-        continue
-      }
-
-      // datas formatadas DD/MM/YYYY
-      const start = operationDate.toFormat('dd/MM/yyyy')
-      const end = now.toFormat('dd/MM/yyyy')
-
-      let dataApi: any[] = []
-
-      if (fi.index === 1) {
-        dataApi = await this.ticker.cdiData(start, end)
-      } else if (fi.index === 2) {
-        dataApi = await this.ticker.ipcaData(start, end)
-      } else if (fi.index === 3) {
-        dataApi = await this.ticker.selicData(start, end)
-      }
-
-      if (Array.isArray(dataApi) && dataApi.length > 0) {
-        const taxa = parseFloat(fi.interest_rate) || 0
-
-        // total acumulado
-        const totalRend = dataApi.reduce((acc, item) => acc + parseFloat(item.valor), 0) * (taxa / 100)
-
-        // últimos 12 meses
-        const last12Rend = dataApi
-          .filter(item => {
-            const dt = DateTime.fromFormat(item.data, 'dd/MM/yyyy')
-            return dt.toMillis() >= lastYear.toMillis() && dt.toMillis() <= now.toMillis()
-          })
-          .reduce((acc, item) => acc + parseFloat(item.valor), 0) * (taxa / 100)
-
-
-        // últimos 30 dias
-        const last30Rend = dataApi
-          .filter(item => {
-            const dt = DateTime.fromFormat(item.data, 'dd/MM/yyyy')
-            return dt.toMillis() >= last30Days.toMillis() && dt.toMillis() <= now.toMillis()
-          })
-          .reduce((acc, item) => acc + parseFloat(item.valor), 0) * (taxa / 100)
-
-          console.log(last30Rend, last12Rend)
-
-
-        mov.calculatedRent = totalRend
-        mov.calculatedRent12 = last12Rend
-        mov.calculatedRentMonth = last30Rend
-      }
-    }
-  }
 
   // 7️⃣ Resultado por tipo de ativo
   let result = map(grouped, (items) => {
@@ -209,18 +157,6 @@ public async compositionList() {
       hex: this.hexGenerator()
     }
   })
-
-  // 8️⃣ Atualiza RF no resultado com FixedIncome
-  const rfGroup = result.find(r => r.type === 'RF')
-  if (rfGroup) {
-    const rentMonth = sumBy(fixedIn, (m: any) => m.calculatedRentMonth || 0)
-    const rentLast12 = sumBy(fixedIn, (m: any) => m.calculatedRent12 || 0)
-    const totalRent = sumBy(fixedIn, (m: any) => m.calculatedRent || 0)
-
-    rfGroup.total_rent = `${totalRent.toFixed(2)}%`
-    rfGroup.rent_last_12 = `${rentLast12.toFixed(2)}%`
-    rfGroup.rent_month = `${rentMonth.toFixed(2)}%`
-  }
 
   // 9️⃣ Ajuste percent_wallet
   const totalPatrimony = sumBy(result, 'total')
@@ -305,7 +241,7 @@ public async compositionList() {
 
     let assets: any = await Asset.query()
     .where('user_id', userId)
-    .whereNot('type', 3)
+    // .whereNot('type', 3)
     .andWhere('quantity', '>', 0)
     .select('cod', 'quantity', 'total_rendi', 'medium_price', 'type', 'total', 'total_fee', 'created_at')
     .preload('assetsType')
@@ -316,12 +252,13 @@ public async compositionList() {
     if (!assets.length) return []
 
     const movements = await Movement.query()
-    .select('cod', 'month_ref', 'year', 'type', 'type_operation', 'total', 'rentability', 'qtd', 'fee', 'date_operation')
+    .select('cod', 'month_ref', 'year', 'type', 'type_operation', 'total', 'rentability', 'qtd', 'fee', 'date_operation', 'fix_id')
     .orderBy('date_operation', 'asc')
     .whereIn('type_operation', [1,2,3,5])
     .where('user_id', userId)
     .preload('assetsType')
     .preload('typeOperation')
+    .preload('fixedIncome')
 
     const startYear = Math.min(
       ...movements
@@ -342,7 +279,7 @@ public async compositionList() {
     const payload = {
       dataInicio: start,
       dataFim: end,
-      papeis_tipos: assets.map((el: any) => ({ papel: el.cod, tipo: el.type }))
+      papeis_tipos: assets.filter(el => el.type !== 3).map((el: any) => ({ papel: el.cod, tipo: el.type }))
     }
 
     const historyEarnings = await this.ticker.accioTickerEarningsRequest(payload)
@@ -365,7 +302,7 @@ public async compositionList() {
     );
 
     const rentalDividends = movements
-    .filter(m => m.type_operation === 5)
+    .filter(m => m.type_operation === 5 || (m.type_operation === 3 && m.type === 3))
     .map(m => ({
       payment_date: m.date_operation,
       cod: m.cod,
@@ -375,7 +312,8 @@ public async compositionList() {
       month_ref: m.month_ref,
       year: m.year,
       type: m.assetsType,
-      typeOperation: m.typeOperation
+      typeOperation: m.typeOperation,
+      fixedIncome: m?.fixedIncome
     }));
 
     const allDividends = [...flattened, ...rentalDividends];
@@ -403,12 +341,12 @@ public async compositionList() {
     }
 
     const enriched = allDividends.map(item => {
-      const [day, month, year] = item.payment_date.split("/").map(Number);
-      const paymentDate = new Date(year, month - 1, day);
-
+      const [day, month, y1] = item.payment_date.split("/").map(Number);
+      const paymentDate = new Date(y1, month - 1, day);
       const qtdAtDate = getQuantityAtDate(movements, item.cod, item.date_com);
       let totalReceived = qtdAtDate * item.value;
-      if(!item?.percent||item.percent === '0.00') {
+       // percent só para não-RF
+      if((!item?.percent||item.percent === '0.00') && item?.type?.id !== 3) {
         const mediumPrice = assets.find(el => el.cod === item.cod)?.medium_price
         if(mediumPrice) {
           item.percent = item.value / Number(mediumPrice) * 100
@@ -418,28 +356,39 @@ public async compositionList() {
       const alreadyRegistered = movements.some(m => {
         if (m.cod !== item.cod) return false;
 
-        const [d, mth, y] = m.date_operation.split("/").map(Number);
-        const movDate = new Date(y, mth - 1, d);
+        const [d, mth, yy] = m.date_operation.split("/").map(Number);
+        const movDate = new Date(yy, mth - 1, d);
 
         return (
           movDate.getTime() === paymentDate.getTime() &&
-          (m.type_operation === 3 || m.type_operation === 5)// supondo que 3  ou 5 = dividendos
+          (m.type_operation === 3 || m.type_operation === 5)
         );
       });
-      let status = alreadyRegistered ? "registered" : "not_registered";
+      let status: 'registered' | 'not_registered' | 'rent' | 'rrf' =
+      alreadyRegistered ? "registered" : "not_registered";
 
       if (item.typeOperation?.id === 5 || item.typeOperation?.code === 5) {
         status = "rent";
         totalReceived = +item.value
       }
+      // renda fixa — APENAS no mês/ano da data de operação
+      if (item.type?.id === 3) {
+        const [_, om, oy] = item.payment_date.split("/").map(Number);
+        // só exibe se for exatamente o mesmo ano do parâmetro e o mesmo mês da operação
+        if (oy != year || item.month_ref != om) {
+          return null; // elimina RF fora do mês/ano da operação
+        }
 
+        status = "rrf";
+        totalReceived = +item.value; // não multiplica por quantidade
+      }
       return {
         ...item,
         qtdAtDate,
         totalReceived,
         status: status
       };
-    });
+    }).filter(Boolean);
 
     return { startYear, composition, earnings: enriched }
   }
@@ -534,7 +483,6 @@ public async compositionList() {
 
     return enriched
   }
-
   public async patrimonyGainList(order: 'asc' | 'desc' = 'asc') {
     const userId = 1
 
@@ -616,6 +564,7 @@ public async compositionList() {
     const asset: any = await Asset.query()
     .select('cod', 'quantity', 'total_rendi', 'medium_price', 'type', 'total', 'total_fee')
     .where('quantity', '>', 0)
+    .whereNot('type', 3)
     .andWhere('user_id', userId)
     .preload('assetsType')
 
@@ -635,7 +584,7 @@ public async compositionList() {
         status = rent >= 0 ? '+' : '-';
       }
       if (curr_price === 0) {
-        rent = -100;
+        rent = 0;
         status = '-';
       }
       const rentability = Number(rent.toFixed(2))
@@ -772,6 +721,75 @@ public async compositionList() {
     });
     return totalPatrimony
   }
+
+  public async fixedRentability(_ctx: HttpContextContract) {
+    const userId = 1
+    const now = DateTime.now()
+    const fixedIn: any = await FixedIncome.query()
+    .where('user_id', userId)
+
+    if (!fixedIn.length) return []
+
+    let results: any[] = []
+
+    for (const fi of fixedIn) {
+      const operationDate = DateTime.fromFormat(fi.date_operation, 'dd/MM/yyyy')
+
+       // Caso não tenha expiration
+      let expiration: DateTime | null = null
+      if (fi.date_expiration) {
+        expiration = DateTime.fromFormat(fi.date_expiration, 'dd/MM/yyyy')
+        // if (expiration <= now) {
+        //   continue
+        // }
+      }
+      // Se não tem expiration e daily_liquidity = 0, pula
+      if (!expiration && !fi.daily_liquidity) {
+        continue
+      }
+      const start = operationDate.toFormat('dd/MM/yyyy')
+      const endDate = expiration ?? now
+      const end = endDate.toFormat('dd/MM/yyyy')
+
+      // const dias = endDate.diff(operationDate, 'days').days
+       // Definir alíquota do IR regressivo
+      // let aliquotaIR = 0.15 // default (mais de 720 dias)
+      // if (dias <= 180) {
+      //   aliquotaIR = 0.225
+      // } else if (dias <= 360) {
+      //   aliquotaIR = 0.20
+      // } else if (dias <= 720) {
+      //   aliquotaIR = 0.175
+      // }
+      let dataApi: any[] = []
+
+      if (fi.index === 1) {
+        dataApi = await this.ticker.cdiData(start, end)
+      } else if (fi.index === 2) {
+        dataApi = await this.ticker.ipcaData(start, end)
+      } else if (fi.index === 3) {
+        dataApi = await this.ticker.selicData(start, end)
+      }
+
+      if (Array.isArray(dataApi) && dataApi.length) {
+        const totalRendAcc = dataApi.reduce((acc, item) => acc + parseFloat(item.valor), 0)
+        console.log(dataApi, totalRendAcc)
+        const percentRate = parseFloat(fi.interest_rate.replace(',', '.')) / 100
+        let rendimentoAcumulado = 1
+        let rendimentoMensal: { data: string; valor: number; grossUp: number }[] = []
+
+        for (const item of dataApi) {
+          const indexador = +item.valor
+          // console.log((+fi.interest_rate / (1 - aliquotaIR)).toFixed(2), indexador, totalRendAcc)
+        }
+      }
+
+    }
+
+    return results
+  }
+
+
 
   private hexGenerator = () => {
     const maxDarkValue = 100; // tonalidade - 100 escuro >++
