@@ -57,11 +57,47 @@ export default class InvestmentsWalletsController {
 }
 public async fixedIcomingHist(){
   const userId = 1
-    const fixedIcome: any = await FixedIncome.query()
+  const now = DateTime.now()
+    let fixedIncome: any = await FixedIncome.query()
+    .where('expired', 0)
     .where('user_id', userId)
     .select('id', 'emissor', 'interest_rate', 'invest_type', 'title_type', 'date_operation', 'date_expiration', 'form', 'index', 'obs', 'total', 'daily_liquidity', 'other_cost', 'rentability', 'expired')
 
-    return fixedIcome
+    fixedIncome = fixedIncome.map(m => m.toJSON());
+    let results: any[] = []
+
+      for (const fi of fixedIncome) {
+        const operationDate = DateTime.fromFormat(fi.date_operation, 'dd/MM/yyyy')
+        let expiration: DateTime | null = null
+        if (fi.date_expiration) {
+          expiration = DateTime.fromFormat(fi.date_expiration, 'dd/MM/yyyy')
+        }
+        // Se não tem expiration e daily_liquidity = 0, pula
+        if (!expiration && Number(fi.daily_liquidity) === 0) {
+          continue
+        }
+        const endDate = expiration ?? now
+        const dias = endDate.diff(operationDate, 'days').days
+         // Definir alíquota do IR regressivo
+        let aliquotaIR = 0.15 // default (mais de 720 dias)
+        if (dias <= 180) {
+          aliquotaIR = 0.225
+        } else if (dias <= 360) {
+          aliquotaIR = 0.20
+        } else if (dias <= 720) {
+          aliquotaIR = 0.175
+        }
+
+        const gross_up = +fi.interest_rate / (1 - aliquotaIR)
+
+        results.push({
+          ...fi,
+          gross_up
+        })
+
+    }
+
+    return results
 }
 
 public async resume(){
@@ -74,7 +110,7 @@ public async resume(){
 
     if(!assets.length) return []
 
-    const patrimony = await this.createPatrimony(assets.map(el => ({cod: el.cod, qtd: el.quantity})))
+    const patrimony = await this.createPatrimony(assets.filter(el => el.type != 3).map(el => ({cod: el.cod, qtd: el.quantity})))
 
     const totals = assets.reduce((acc, item) => {
       acc.total_medium += parseFloat(item.medium_price) || 0;
@@ -83,7 +119,7 @@ public async resume(){
     }, { total_medium: 0, total_provents: 0 });
 
 
-  return {patrimony, ...totals}
+  return {patrimony: patrimony + totals.total_provents, ...totals}
 }
 
 public async compositionList() {
@@ -740,11 +776,11 @@ const groupedAll = groupBy(assets, 'type');
     const query = tickers.map((el: any) => el.cod).join('-')
     const tickerPricing = await this.ticker.accioTickerDataRequest(query)
     let totalPatrimony = 0;
-
     tickers.forEach(tickerItem => {
       // Encontra o preço atual correspondente
       const pricing = tickerPricing.find(p => p.ticker === tickerItem.cod);
       if (pricing) {
+
         totalPatrimony += pricing.curPrc * tickerItem.qtd;
       }
     });
@@ -802,7 +838,6 @@ const groupedAll = groupBy(assets, 'type');
 
       if (Array.isArray(dataApi) && dataApi.length) {
         const totalRendAcc = dataApi.reduce((acc, item) => acc + parseFloat(item.valor), 0)
-        console.log(dataApi, totalRendAcc)
         const percentRate = parseFloat(fi.interest_rate.replace(',', '.')) / 100
         let rendimentoAcumulado = 1
         let rendimentoMensal: { data: string; valor: number; grossUp: number }[] = []
@@ -817,7 +852,6 @@ const groupedAll = groupBy(assets, 'type');
 
     return results
   }
-
 
 
   private hexGenerator = () => {

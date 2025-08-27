@@ -22,7 +22,7 @@ export default class InvestmentsMovementsController {
       query.select('title', 'full_title')
     })
     .preload('fixedIncome', (query) => {
-      query.select('id', 'emissor', 'interest_rate', 'invest_type', 'title_type', 'date_operation', 'date_expiration', 'form', 'index', 'obs', 'total', 'daily_liquidity', 'other_cost', 'rentability')
+      query.select('id', 'emissor', 'interest_rate', 'invest_type', 'title_type', 'date_operation', 'date_expiration', 'form', 'index', 'obs', 'total', 'daily_liquidity', 'other_cost', 'rentability', 'ir')
     })
     .preload('unfoldOperation', (query) => {
       query.select('id', 'from', 'to', 'factor')
@@ -546,6 +546,7 @@ export default class InvestmentsMovementsController {
           daily_liquidity: iterator.daily_liquidity ? 1 : 0,
           other_cost: Number(other_cost || 0),
           user_id: userId,
+          ir: iterator.ir,
         })
 
         // === 2) Asset ===
@@ -635,6 +636,7 @@ export default class InvestmentsMovementsController {
       total: body.value ? Number(body.value) : fixedIncome.total,
       daily_liquidity: body.daily_liquidity !== undefined ? (body.daily_liquidity ? 1 : 0) : fixedIncome.daily_liquidity,
       other_cost: body.other_cost !== undefined ? Number(body.other_cost) : fixedIncome.other_cost,
+      ir: body.ir !== undefined ? (body.ir ? 1 : 0) : fixedIncome.ir,
     });
 
 

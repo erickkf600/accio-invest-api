@@ -21,6 +21,7 @@ export default class FixedIncome extends BaseSchema {
       table.decimal('other_cost', 15, 10).nullable()
       table.integer("user_id", 20) .unsigned().references('users.id').notNullable().onDelete('CASCADE').onUpdate('CASCADE')
       table.boolean("expired").notNullable().defaultTo(0)
+      table.boolean("ir").notNullable()
       table.timestamp('created_at', { useTz: true }).nullable().defaultTo(this.now())
       table.timestamp('updated_at', { useTz: true }).nullable()
     })

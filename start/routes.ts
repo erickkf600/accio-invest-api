@@ -216,18 +216,49 @@ Route.get("/estimate/list", async () => {
 });
 
 
-Route.post("/reports/medium-price", async (ctx) => {
-  const { default: InvestmentsReportsController } = await import(
-    "App/Controllers/Http/InvestmentsReportsController"
-  );
-  return new InvestmentsReportsController().pmHistory(ctx);
-});
-
 Route.get("/reports/history-aports", async () => {
   const { default: InvestmentsReportsController } = await import(
     "App/Controllers/Http/InvestmentsReportsController"
   );
   return new InvestmentsReportsController().aportsHistory();
 });
+Route.get("/reports/rent-history", async (ctx) => {
+  const { default: InvestmentsReportsController } = await import(
+    "App/Controllers/Http/InvestmentsReportsController"
+  );
+  return new InvestmentsReportsController().rentHistory(ctx);
+});
+Route.get("/reports/sell-history", async (ctx) => {
+  const { default: InvestmentsReportsController } = await import(
+    "App/Controllers/Http/InvestmentsReportsController"
+  );
+  return new InvestmentsReportsController().sellHistory(ctx);
+});
+Route.get("/reports/unfolding-history", async (ctx) => {
+  const { default: InvestmentsReportsController } = await import(
+    "App/Controllers/Http/InvestmentsReportsController"
+  );
+  return new InvestmentsReportsController().unfoldHistory(ctx);
+});
+Route.post("/reports/medium-price", async (ctx) => {
+  const { default: InvestmentsReportsController } = await import(
+    "App/Controllers/Http/InvestmentsReportsController"
+  );
+  return new InvestmentsReportsController().pmHistory(ctx);
+});
+Route.post("/reports/upload/brokerage", async (ctx) => {
+  const { default: InvestmentsReportsController } = await import(
+    "App/Controllers/Http/InvestmentsReportsController"
+  );
+  return new InvestmentsReportsController().uploadBrokerage(ctx);
+});
+
+Route.get("/reports/fixed-incoming", async (ctx) => {
+  const { default: InvestmentsReportsController } = await import(
+    "App/Controllers/Http/InvestmentsReportsController"
+  );
+  return new InvestmentsReportsController().fixedIcomingHist(ctx);
+});
+
 
 
