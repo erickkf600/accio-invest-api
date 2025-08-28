@@ -1,16 +1,18 @@
 import { HttpContextContract } from '@ioc:Adonis/Core/HttpContext';
 import Database from '@ioc:Adonis/Lucid/Database';
+import BrokerageInvoices from 'App/Models/BrokerageInvoices';
 import FixedIncome from 'App/Models/FixedIncome';
 import Movement from 'App/Models/Movement';
 import Unfolding from 'App/Models/Unfolding';
+import FileBrowser from 'App/services/filebrowser.service';
 import { groupBy, map, maxBy, minBy, sumBy } from 'lodash';
-import Env from '@ioc:Adonis/Core/Env';
-import Paperless from 'App/services/paperless.service';
+import { DateTime } from 'luxon';
 
 
 export default class InvestmentsReportsController {
 
-  paperless = new Paperless()
+  // paperless = new Paperless()
+  fileBrowser = new FileBrowser()
   public async aportsHistory(order: string = 'asc') {
     const movements: any = await Movement.query()
     .select('month_ref', 'year')
@@ -167,13 +169,58 @@ export default class InvestmentsReportsController {
   }
 
   public async uploadBrokerage(ctx: HttpContextContract) {
-    const body: any = ctx.request.file('corretagem')
-    // criar uma nova table no banco e armazenar o serial_numer(gerador de uuid) para poder
-    // talves logo na criação realizar a busca pelo serial e armazenar as infos no banco
-    // buscar pelo serial http://localhost:8000/api/documents/?archive_serial_number=4294967295
-    // assim vai ter acesso ao id e poder realizar a req http://localhost:8000/api/documents/${id}/download/
+    // const file: any = ctx.request.file('notas_corretagem')
+    const now = DateTime.local()
+    const userId = 1
+    try {
+      const allFiles = ctx.request.allFiles()
+      let path
+      let fileItem
+      let fileName
+      for (const [fieldName, file] of Object.entries(allFiles)) {
+        path = `${fieldName}/${(file as any).clientName}`
+        fileName = (file as any).clientName
+        fileItem = file
+      }
 
-    return this.paperless.upload(body)
+      if(!this.fileBrowser.token) {
+        await this.fileBrowser.auth()
+      }
+      const payload = {
+        name: fileName,
+        date_operation: now.toFormat('dd/MM/yyyy'),
+        path: path,
+        month_ref:  now.month,
+        year: now.year,
+        user_id: userId
+      }
+      await BrokerageInvoices.create(payload)
+      await this.fileBrowser.upload(path, fileItem)
+      return payload
+    } catch (error) {
+      throw {
+        code: 4,
+        message: `Ocorreu um erro ao cadastrar nota: ${error}`,
+      };
+    }
+  }
+
+  public async getInvoicesList(ctx: HttpContextContract) {
+    const queryParam: any = ctx.request.qs().path;
+    const userId = 1
+
+    if(!queryParam) {
+      return BrokerageInvoices.query()
+      .select('id', 'name', 'date_operation', 'path')
+      .where('user_id', userId)
+    }else{
+      if(!this.fileBrowser.token) {
+        await this.fileBrowser.auth()
+      }
+      const files = this.fileBrowser.viewFile(queryParam)
+      if(!files) return []
+      return files
+    }
   }
 
 }

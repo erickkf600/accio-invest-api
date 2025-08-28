@@ -259,6 +259,12 @@ Route.get("/reports/fixed-incoming", async (ctx) => {
   );
   return new InvestmentsReportsController().fixedIcomingHist(ctx);
 });
+Route.get("/reports/brokerage-invoices", async (ctx) => {
+  const { default: InvestmentsReportsController } = await import(
+    "App/Controllers/Http/InvestmentsReportsController"
+  );
+  return new InvestmentsReportsController().getInvoicesList(ctx);
+});
 
 
 
