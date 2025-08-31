@@ -13,7 +13,11 @@ services:
       - ${PORT}:${PORT}
       - 9229:9229
     env_file:
-      - .env
+      - .prod.env
     volumes:
       - ./:/home/node/app
-    command: dumb-init node ace serve
+    command: ./entrypoint.sh
+
+networks:
+  mysql_host:
+    driver: bridge
