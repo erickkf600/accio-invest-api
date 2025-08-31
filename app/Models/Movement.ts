@@ -1,8 +1,12 @@
-import { BaseModel, column, HasOne, hasOne } from '@ioc:Adonis/Lucid/Orm'
+import { BaseModel, BelongsTo, belongsTo, column, HasOne, hasOne } from '@ioc:Adonis/Lucid/Orm'
 import { DateTime } from 'luxon'
 import Month from './Month'
 import Operation from './Operation'
 import Type from './Type'
+import User from './User'
+import Asset from './Asset'
+import Unfolding from './Unfolding'
+import FixedIncome from './FixedIncome'
 
 export default class Movement extends BaseModel {
   @column({ isPrimary: true })
@@ -13,6 +17,9 @@ export default class Movement extends BaseModel {
 
   @column()
   public date_operation: string
+
+  @column()
+  public rentability: string
 
   @column()
   public qtd: number
@@ -35,6 +42,10 @@ export default class Movement extends BaseModel {
   @column()
   public month_ref: number
 
+
+  @column()
+  public user_id: number
+
   @column()
   public total: number
 
@@ -43,6 +54,12 @@ export default class Movement extends BaseModel {
 
   @column()
   public year: number
+
+  @column()
+  public unfold_id: number
+
+  @column()
+  public fix_id: number
 
   // @column.dateTime({
   //   autoCreate: true,
@@ -55,6 +72,18 @@ export default class Movement extends BaseModel {
 
   @column.dateTime({ autoCreate: true, autoUpdate: true })
   public updated_at: DateTime
+
+  @hasOne(() => Asset, {
+    localKey: 'cod',
+    foreignKey: 'cod',
+  })
+  public assets: HasOne<typeof Asset>
+
+  @hasOne(() => User, {
+    localKey: 'user_id',
+    foreignKey: 'id',
+  })
+  public user: HasOne<typeof User>
 
   @hasOne(() => Type, {
     localKey: 'type',
@@ -74,4 +103,15 @@ export default class Movement extends BaseModel {
   })
   public month: HasOne<typeof Month>
 
+  @belongsTo(() => Unfolding, {
+    localKey: 'id',
+    foreignKey: 'unfold_id'
+  })
+  public unfoldOperation: BelongsTo<typeof Unfolding>
+
+  @belongsTo(() => FixedIncome, {
+    localKey: 'id',
+    foreignKey: 'fix_id'
+  })
+  public fixedIncome: BelongsTo<typeof FixedIncome>
 }

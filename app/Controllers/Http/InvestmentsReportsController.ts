@@ -1,93 +1,18 @@
 import { HttpContextContract } from '@ioc:Adonis/Core/HttpContext';
 import Database from '@ioc:Adonis/Lucid/Database';
+import BrokerageInvoices from 'App/Models/BrokerageInvoices';
+import FixedIncome from 'App/Models/FixedIncome';
 import Movement from 'App/Models/Movement';
+import Unfolding from 'App/Models/Unfolding';
+import FileBrowser from 'App/services/filebrowser.service';
+import { groupBy, map, maxBy, minBy, sumBy } from 'lodash';
+import { DateTime } from 'luxon';
 
-/**
- * NESSE CONTROLLER CONTEM OS ITENS DE RELATÓRIO
- * [His de preço médio, His de aports, His de dividendos, His de vendas]
- */
 
 export default class InvestmentsReportsController {
 
-  public async pmHistory(ctx: HttpContextContract) {
-    const body: any = ctx.request.body()
-
-    const movements: any = await Movement.query()
-    .select('month_ref', 'year', 'cod', 'date_operation')
-    .select(Database.raw('group_concat(date_operation) as date_operation'))
-    .select(Database.raw('group_concat(unity_value) as unity_value'))
-    .select(Database.raw('group_concat(qtd) as qtd'))
-    .select(Database.raw('group_concat(month_ref) as month_ref'))
-    .select(Database.raw('group_concat(year) as year'))
-    .where('type_operation', 1)
-    .where((query) => {
-        if (body.cod) {
-            query.where('cod', body.cod);
-        }
-    })
-    .where((builder) => {
-        if (body.period && body.period.length === 2) {
-            const [startM, startY] = body.period[0].split('-').map(Number);
-            const [endM, endY] = body.period[1].split('-').map(Number);
-
-            const startDate = startY * 100 + startM; // Ex: 202303 para março de 2023
-            const endDate = endY * 100 + endM; // Ex: 202309 para setembro de 2023
-
-            builder.whereRaw(`
-              (year * 100 + month_ref) BETWEEN ? AND ?
-            `, [startDate, endDate]);
-        }
-    })
-    .groupBy('cod')
-    .orderBy('year', 'asc')
-
-    const transformedData = movements.map(item => {
-      const orderedData = item.month_ref.split(',').map((m, i) => ({
-        month: m.padStart(2, '0'),
-        year: item.year.split(',')[i],
-        unity_value: item.unity_value.split(',')[i],
-        qtd: item.qtd.split(',')[i],
-        date_operation: item.date_operation.split(',')[i]
-    }));
-
-    orderedData.sort((a, b) => {
-        const [dayA, monthA, yearA] = a.date_operation.split('/').map(Number);
-        const [dayB, monthB, yearB] = b.date_operation.split('/').map(Number);
-        const dateA = yearA * 10000 + monthA * 100 + dayA;
-        const dateB = yearB * 10000 + monthB * 100 + dayB;
-        return dateA - dateB;
-    });
-
-     const months = orderedData.map(d => d.month);
-     const years = orderedData.map(d => d.year);
-     const unitValues = orderedData.map(d => d.unity_value);
-     const quantities = orderedData.map(d => d.qtd);
-
-      let accumulatedQtd = 0;
-      let accumulatedValue = 0;
-
-      const pms = months.map((m, i) => {
-        accumulatedValue += +unitValues[i] * +quantities[i] //acumulativo com o valor anterior
-        accumulatedQtd += +quantities[i] //acumulativo com o valor anterior
-        const mediumPrice = accumulatedValue/accumulatedQtd
-        return {
-          total_invest: parseFloat(accumulatedValue.toFixed(2)),
-          total_quotas: accumulatedQtd,
-          medium_price: parseFloat(mediumPrice.toFixed(2)),
-          date: `${m.padStart(2, '0')}-${years[i]}`
-        }
-      })
-
-      return {
-        cod: item.cod,
-        pms: pms
-      }
-    });
-
-
-    return transformedData
-  }
-
+  // paperless = new Paperless()
+  fileBrowser = new FileBrowser()
   public async aportsHistory(order: string = 'asc') {
     const movements: any = await Movement.query()
     .select('month_ref', 'year')
@@ -138,6 +63,164 @@ export default class InvestmentsReportsController {
         return yearA - yearB || a.month_num - b.month_num;
   });
     return chartMap
+  }
+
+  public async rentHistory(_ctx: HttpContextContract) {
+    const userId = 1
+    const movements: any = await Movement.query()
+    .select('id', 'cod', 'date_operation', 'type_operation', 'total', 'obs', 'type')
+    .where('type_operation', 5)
+    .andWhere('user_id', userId)
+    .preload('assetsType', (query) =>{
+      query.select('title', 'full_title')
+    })
+    return movements
+  }
+
+  public async sellHistory(_ctx: HttpContextContract) {
+    const userId = 1
+    const movements: any = await Movement.query()
+    .select('id', 'cod', 'date_operation', 'type_operation', 'total', 'obs', 'type')
+    .where('type_operation', 2)
+    .andWhere('user_id', userId)
+    .preload('assetsType', (query) =>{
+      query.select('title', 'full_title')
+    })
+    return movements
+  }
+
+  public async unfoldHistory(_ctx: HttpContextContract) {
+    const userId = 1
+    const unfolds: any = await Unfolding.query()
+    .where('user_id', userId)
+    .preload('change')
+    return unfolds
+  }
+
+  public async pmHistory(ctx: HttpContextContract) {
+    const body: any = ctx.request.body()
+
+    const movements: any[] = await Movement.query()
+    .select('cod', 'total', 'fee', 'date_operation', 'unity_value', 'qtd', 'type', 'type_operation', 'month_ref', 'year')
+    .whereIn('type_operation', [1,2])
+    .whereNot('type', 3)
+    .where((query) => {
+      if (body.cod) {
+        query.where('cod', body.cod);
+      }
+    })
+      .orderBy('cod', 'asc')
+      .orderBy('date_operation', 'asc');
+
+      if (!movements.length) return [];
+
+    // Ajuste de período no JS
+    let filtered = movements;
+    if (body.period && body.period.length === 2) {
+       const [startM, startY] = body.period[0].split('-').map(Number);
+        const [endM, endY] = body.period[1].split('-').map(Number);
+
+      let startDate = startY * 100 + startM;
+      let endDate = endY * 100 + endM;
+
+       // última data cadastrada
+       const maxDate = maxBy(movements, m => m.year * 100 + m.month_ref);
+       const minDate = minBy(movements, m => m.year * 100 + m.month_ref);
+       if (maxDate && minDate) {
+        const initDate = minDate.year * 100 + minDate.month_ref;
+        const lastDate = maxDate.year * 100 + maxDate.month_ref;
+        if (endDate > lastDate) {
+          startDate = initDate;
+          endDate = lastDate;
+        }
+       }
+       filtered = movements.filter(m => {
+        const currentDate = m.year * 100 + m.month_ref;
+        return currentDate >= startDate && currentDate <= endDate;
+      });
+    }
+    if (!filtered.length) return [];
+    const grouped = groupBy(filtered, "cod");
+    const content: any = map(grouped, (items: any, cod) => {
+      const qtd = Math.max(
+        sumBy(items, (item: any) => (item.type_operation === 1 ? item.qtd : -item.qtd)),
+        0
+      );
+      const total = sumBy(items, (item: any) => Number(item.total) || 0);
+      const fee = sumBy(items, (item: any) => Number(item.fee) || 0);
+      return {
+        cod,
+        qtd,
+        total,
+        medium_price: +qtd > 0 ? parseFloat(((+total - +fee) / +qtd).toFixed(2)) : 0,
+      }
+    })
+
+    return content.filter(el => !!el.qtd)
+  }
+
+  public async fixedIcomingHist(_ctx: HttpContextContract){
+    const userId = 1
+      const fixedIcome: any = await FixedIncome.query()
+      .where('user_id', userId)
+      .select('id', 'emissor', 'interest_rate', 'invest_type', 'title_type', 'date_operation', 'date_expiration', 'form', 'index', 'obs', 'total', 'daily_liquidity', 'other_cost', 'rentability', 'expired')
+
+      return fixedIcome
+  }
+
+  public async uploadBrokerage(ctx: HttpContextContract) {
+    // const file: any = ctx.request.file('notas_corretagem')
+    const now = DateTime.local()
+    const userId = 1
+    try {
+      const allFiles = ctx.request.allFiles()
+      let path
+      let fileItem
+      let fileName
+      for (const [fieldName, file] of Object.entries(allFiles)) {
+        path = `${fieldName}/${(file as any).clientName}`
+        fileName = (file as any).clientName
+        fileItem = file
+      }
+
+      if(!this.fileBrowser.token) {
+        await this.fileBrowser.auth()
+      }
+      const payload = {
+        name: fileName,
+        date_operation: now.toFormat('dd/MM/yyyy'),
+        path: path,
+        month_ref:  now.month,
+        year: now.year,
+        user_id: userId
+      }
+      await BrokerageInvoices.create(payload)
+      await this.fileBrowser.upload(path, fileItem)
+      return payload
+    } catch (error) {
+      throw {
+        code: 4,
+        message: `Ocorreu um erro ao cadastrar nota: ${error}`,
+      };
+    }
+  }
+
+  public async getInvoicesList(ctx: HttpContextContract) {
+    const queryParam: any = ctx.request.qs().path;
+    const userId = 1
+
+    if(!queryParam) {
+      return BrokerageInvoices.query()
+      .select('id', 'name', 'date_operation', 'path')
+      .where('user_id', userId)
+    }else{
+      if(!this.fileBrowser.token) {
+        await this.fileBrowser.auth()
+      }
+      const files = this.fileBrowser.viewFile(queryParam)
+      if(!files) return []
+      return files
+    }
   }
 
 }

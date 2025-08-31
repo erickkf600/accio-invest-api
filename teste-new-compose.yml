@@ -1,0 +1,94 @@
+version: "3.8"
+
+services:
+  # === Serviço principal da aplicação Node ===
+  accio_invest:
+    container_name: accio_invest
+    restart: always
+    networks:
+      - mysql_host
+    build:
+      context: .
+      target: dependencies
+    ports:
+      - "${PORT}:${PORT}"
+      - 9229:9229
+    env_file:
+      - .env
+    volumes:
+      - ./:/home/node/app
+    command: dumb-init node ace serve
+
+  # === Banco MySQL para desenvolvimento ===
+  accio-db-dev:
+    image: mysql
+    container_name: accio-db-dev
+    restart: always
+    networks:
+      - mysql_host
+    ports:
+      - "53000:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+    volumes:
+      - accio-db-data:/var/lib/mysql
+
+  # === Redis para Paperless-ngx ===
+  broker:
+    image: redis:8
+    restart: unless-stopped
+    volumes:
+      - redisdata:/data
+
+  # === MariaDB para Paperless-ngx ===
+  db:
+    image: mariadb:11
+    restart: unless-stopped
+    volumes:
+      - dbdata:/var/lib/mysql
+    environment:
+      MARIADB_HOST: paperless
+      MARIADB_DATABASE: ${PAPERLESS_DBNAME}
+      MARIADB_USER: ${PAPERLESS_DBUSER}
+      MARIADB_PASSWORD: ${PAPERLESS_DBPASS}
+      MARIADB_ROOT_PASSWORD: ${PAPERLESS_ROOTPASS}
+
+  # === Paperless-ngx Webserver ===
+  webserver:
+    image: ghcr.io/paperless-ngx/paperless-ngx:latest
+    restart: unless-stopped
+    depends_on:
+      - db
+      - broker
+    ports:
+      - "8000:8000"
+    volumes:
+      - data:/usr/src/paperless/data
+      - media:/usr/src/paperless/media
+      - ./export:/usr/src/paperless/export
+      - ./consume:/usr/src/paperless/consume
+    env_file:
+      - .env
+    environment:
+      PAPERLESS_REDIS: ${PAPERLESS_REDIS}
+      PAPERLESS_DBENGINE: mariadb
+      PAPERLESS_DBHOST: db
+      PAPERLESS_DBUSER: ${PAPERLESS_DBUSER}
+      PAPERLESS_DBPASS: ${PAPERLESS_DBPASS}
+      PAPERLESS_DBPORT: 3306
+
+# === Volumes para persistência ===
+volumes:
+  accio-db-data:
+  data:
+  media:
+  dbdata:
+  redisdata:
+
+# === Redes personalizadas ===
+networks:
+  mysql_host:
+    driver: bridge

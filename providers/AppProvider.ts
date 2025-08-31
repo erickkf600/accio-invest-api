@@ -1,4 +1,5 @@
 import { ApplicationContract } from '@ioc:Adonis/Core/Application'
+import { validAndUpdate } from 'App/services/validation-expire'
 
 export default class AppProvider {
   constructor (protected app: ApplicationContract) {
@@ -13,7 +14,8 @@ export default class AppProvider {
   }
 
   public async ready () {
-    // App is ready
+    const scheduler = this.app.container.use('Adonis/Addons/Scheduler')
+    scheduler.run()
   }
 
   public async shutdown () {
